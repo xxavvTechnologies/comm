@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nova Comm - Chat</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Update Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
+    <script>
+        // Allow cookies for Firebase
+        document.cookie = "firebase-allow-cookies=1; SameSite=None; Secure";
+    </script>
+    <!-- Initialize Firebase first -->
+    <script src="js/firebase-config.js"></script>
+    <!-- Then load app logic -->
+    <script src="js/chat.js"></script>
+    <link rel="manifest" href="manifest.json">
+</head>
+<body>
+    <div class="app-container">
+        <aside class="contacts-sidebar">
+            <div class="contacts-header">
+                <h2>Conversations</h2>
+                <button class="new-chat-btn" id="newChatBtn">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                    New Chat
+                </button>
+            </div>
+            <div class="contacts-search">
+                <input type="search" placeholder="Search conversations..." aria-label="Search conversations">
+            </div>
+            <div class="contacts-list">
+                <!-- Conversations will be loaded here -->
+            </div>
+        </aside>
+        
+        <!-- Add Search Pane -->
+        <div class="search-pane" id="searchPane">
+            <div class="search-pane-header">
+                <button id="closeSearchBtn">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                </button>
+                <input type="search" placeholder="Search users..." id="userSearchInput" autocomplete="off">
+            </div>
+            <div class="search-results" id="searchResults">
+                <!-- Search results will be displayed here -->
+            </div>
+        </div>
+
+        <main class="chat-container">
+            <div class="chat-header">
+                <div class="user-info">
+                    <img src="https://d2zcpib8duehag.cloudfront.net/accountuser.png" alt="User Avatar" class="avatar">
+                    <span class="username">John Doe</span>
+                </div>
+            </div>
+            <div class="messages" id="messageArea">
+                <!-- Messages will be inserted here -->
+            </div>
+            <div class="message-input">
+                <div class="message-input-container">
+                    <input type="text" placeholder="Message">
+                    <button>Send</button>
+                </div>
+            </div>
+        </main>
+    </div>
+</body>
+</html>
