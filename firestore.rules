@@ -1,0 +1,421 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Basic rules for users collection
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if isAuthenticated() && request.auth.uid == userId;
+      allow delete: if false;
+    }
+
+    // Basic rules for messages
+    match /messages/{messageId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated() && 
+        resource.data.userId == request.auth.uid;
+    }
+
+    // Basic rules for typing status
+    match /typing/{chatId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Helper functions
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isValidDocument() {
+      let data = request.resource.data;
+      return 
+        data.keys().hasAll(['title', 'content', 'lastEdited', 'userId']) &&
+        data.title is string &&
+        data.content is string &&
+        data.lastEdited is timestamp &&
+        data.userId == request.auth.uid;
+    }
+
+    function isValidRevision() {
+      let data = request.resource.data;
+      return 
+        data.keys().hasAll(['content', 'timestamp', 'author', 'userId']) &&
+        data.content is string &&
+        data.timestamp is timestamp &&
+        data.author is string &&
+        data.userId == request.auth.uid;
+    }
+    
+        // Helper function for validating posts
+    function isValidPost() {
+      let data = request.resource.data;
+      return 
+        data.keys().hasAll(['content', 'userId', 'username', 'createdAt', 'likes']) &&
+        data.content is string &&
+        data.userId == request.auth.uid &&
+        data.username is string &&
+        data.createdAt is timestamp &&
+        data.likes is number;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true);
+    }
+    
+        function isValidComment() {
+      let data = request.resource.data;
+      return 
+        data.keys().hasAll(['content', 'userId', 'username', 'createdAt']) &&
+        data.content is string &&
+        data.userId == request.auth.uid &&
+        data.username is string &&
+        data.createdAt is timestamp;
+    }
+    
+    function isUserInChat(chatId) {
+      return chatId.split('_').hasAny([request.auth.uid]);
+    }
+    
+// Posts collection
+    match /posts/{postId} {
+      allow read: if isAuthenticated();
+      
+      allow create: if isAuthenticated() 
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.keys().hasAll(['content', 'userId', 'username', 'createdAt', 'likes'])
+        && request.resource.data.likes == 0;
+      
+      allow update: if isAuthenticated() &&
+        ((request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']) &&
+          request.resource.data.likes == resource.data.likes + 1) ||
+         (resource.data.userId == request.auth.uid &&
+          (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isVerified ||
+           resource.data.createdAt.toMillis() + duration.value(30, 'm') > request.time.toMillis()) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasAll(['content', 'edited', 'truncated'])));
+      
+      allow delete: if isAuthenticated() && 
+        resource.data.userId == request.auth.uid &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isVerified ||
+         resource.data.createdAt.toMillis() + duration.value(30, 'm') > request.time.toMillis());
+        
+        match /comments/{commentId} {
+        allow read: if isAuthenticated();
+        
+        allow create: if isAuthenticated() && isValidComment();
+        
+        allow update: if isAuthenticated() && 
+                     resource.data.userId == request.auth.uid &&
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content']);
+        
+        allow delete: if isAuthenticated() && 
+                     (resource.data.userId == request.auth.uid || 
+                      resource.data.userId == get(/databases/$(database)/documents/posts/$(postId)).data.userId);
+      }
+      
+      // Add admin override for post management
+      allow update, delete: if isAdmin();
+
+      match /likes/{userId} {
+        allow read: if isAuthenticated();
+        allow create: if isOwner(userId);
+        allow delete: if isOwner(userId);
+      }
+    }
+
+        // Users collection with verification rules
+    match /users/{userId} {
+      allow read: if isAuthenticated();  // Allow any authenticated user to read user data
+      
+      // Only allow users to update non-protected fields
+      allow create: if isOwner(userId) && 
+                   !request.resource.data.keys().hasAny(['isVerified', 'adminRole']);
+      
+      allow update: if (isOwner(userId) && 
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['profilePicUrl']) ||
+                   !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isVerified', 'adminRole'])) || 
+                   (isAdmin() && 
+                   request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isVerified'])) ||
+                   (isAdmin() && request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['warnings', 'strikes', 'isBanned', 'isHidden', 'banReason', 
+                   'hiddenReason', 'lastWarning', 'lastStrike', 'bannedAt', 'hiddenAt']));
+      
+      allow delete: if isAdmin();
+    }
+    
+    // Admin collection for managing verified status
+    match /admins/{adminId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Only manually through Firebase Console
+    }
+
+    // Deleted users collection (for admin record keeping)
+    match /deletedUsers/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Messages collection
+    match /messages/{messageId} {
+      allow read: if isAuthenticated();
+      
+      allow create: if isAuthenticated() && 
+                   request.resource.data.userId == request.auth.uid
+                   && isUserInChat(request.resource.data.chatId);
+      
+      // Allow deletion only for message owner
+      allow delete: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+        
+      // Prevent editing messages
+      allow update: if isAuthenticated()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy', 'readAt']);
+    }
+
+    // Chats collection
+    match /chats/{chatId} {
+      // Allow reading chats if user is a participant
+      allow read: if isAuthenticated();
+      
+      // Allow creating chats
+      allow create: if isAuthenticated();
+      
+      // Allow updates to chat metadata
+      allow update: if isAuthenticated();
+      
+      // Prevent deletion
+      allow delete: if false;
+    }
+
+    // UserTokens collection for FCM
+    match /userTokens/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Notifications collection
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && 
+                 resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && 
+                   request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+    
+    // Documents collection with enhanced rules
+        match /documents/{docId} {
+      // Allow reading if:
+      // 1. User owns the document
+      // 2. Document is public
+      // 3. User is authenticated and is in the sharedWith array
+      allow read: if 
+        // Allow unauthenticated access if document is public
+        (resource.data.isPublic == true) ||
+        // Otherwise require authentication
+        (isAuthenticated());
+      
+      // Only owner can create/update/delete
+      // Update the write rules to ensure sharedWith only contains valid user IDs
+  allow create: if isAuthenticated() && 
+                   request.resource.data.userId == request.auth.uid &&
+                   (
+                     !('sharedWith' in request.resource.data) ||
+                     request.resource.data.sharedWith is list
+                   );
+      
+      allow update: if isAuthenticated() && 
+                   resource.data.userId == request.auth.uid &&
+                   (
+                     !('sharedWith' in request.resource.data) ||
+                     request.resource.data.sharedWith is list
+                   );
+      
+      allow delete: if isAuthenticated() && 
+                   resource.data.userId == request.auth.uid;
+
+      // Revisions subcollection
+      match /revisions/{revisionId} {
+        allow read, write: if isAuthenticated() && 
+                          get(/databases/$(database)/documents/documents/$(docId)).data.userId == request.auth.uid;
+      }
+    }
+
+    // Document settings collection
+    match /documents/{docId}/settings/{settingId} {
+      allow read: if isAuthenticated() && 
+                 get(/databases/$(database)/documents/documents/$(docId)).data.userId == request.auth.uid;
+      
+      allow write: if isAuthenticated() && 
+                  get(/databases/$(database)/documents/documents/$(docId)).data.userId == request.auth.uid;
+    }
+
+    // Document backups collection
+    match /documents/{docId}/backups/{backupId} {
+      allow read: if isAuthenticated() && 
+                 get(/databases/$(database)/documents/documents/$(docId)).data.userId == request.auth.uid;
+      
+      allow create: if isAuthenticated() && 
+                   get(/databases/$(database)/documents/documents/$(docId)).data.userId == request.auth.uid;
+      
+      allow delete: if isAuthenticated() && 
+                   get(/databases/$(database)/documents/documents/$(docId)).data.userId == request.auth.uid;
+      
+      allow update: if false; // Backups should be immutable
+    }
+
+    // Document revisions with enhanced validation
+    match /documents/{docId}/revisions/{revisionId} {
+      allow read: if isAuthenticated() && 
+                 get(/databases/$(database)/documents/documents/$(docId)).data.userId == request.auth.uid;
+      
+      allow create: if isAuthenticated() && 
+                   get(/databases/$(database)/documents/documents/$(docId)).data.userId == request.auth.uid &&
+                   isValidRevision();
+      
+      allow delete: if isAuthenticated() && 
+                   get(/databases/$(database)/documents/documents/$(docId)).data.userId == request.auth.uid;
+                   
+      allow update: if false; // Revisions should be immutable
+    }
+
+    // Document sharing rules
+    match /documentShares/{shareId} {
+      allow read: if isAuthenticated() &&
+                 (resource.data.userId == request.auth.uid || 
+                  resource.data.sharedWith == request.auth.uid);
+      
+      allow create: if isAuthenticated() && 
+                   request.resource.data.userId == request.auth.uid;
+      
+      allow update, delete: if isAuthenticated() && 
+                          resource.data.userId == request.auth.uid;
+    }
+
+    // User preferences collection
+    match /userPreferences/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId);
+    }
+
+    // Document statistics collection
+    match /documentStats/{docId} {
+      allow read: if isAuthenticated() && 
+                 get(/databases/$(database)/documents/documents/$(docId)).data.userId == request.auth.uid;
+      
+      allow write: if isAuthenticated() && 
+                  get(/databases/$(database)/documents/documents/$(docId)).data.userId == request.auth.uid;
+    }
+
+    // Document tags collection
+    match /documentTags/{tagId} {
+      allow read: if isAuthenticated();
+      
+      allow create: if isAuthenticated() && 
+                   request.resource.data.userId == request.auth.uid;
+      
+      allow update, delete: if isAuthenticated() && 
+                          resource.data.userId == request.auth.uid;
+    }
+
+    // Recent documents collection
+    match /recentDocuments/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId);
+    }
+
+    // Hashtags collection
+    match /hashtags/{tagId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() &&
+          request.resource.data.keys().hasAll(['count', 'lastUsed']) &&
+          request.resource.data.count is number;
+      allow delete: if false;
+    }
+
+    // Chat-specific rules
+    match /messages/{messageId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.keys().hasAll(['text', 'userId', 'chatId', 'timestamp', 'userEmail']);
+      
+      // Allow deletion only for message owner
+      allow delete: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+        
+      // Prevent editing messages
+      allow update: if false;
+    }
+
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null 
+        && request.auth.uid == userId;
+    }
+
+    match /status/{document=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // Optional: Dedicated chat users collection if you want to separate from other apps
+    match /chat_users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null 
+        && request.auth.uid == userId;
+    }
+
+    // Add rules for user status tracking
+    match /status/connections {
+      allow read, write: if request.auth != null;
+    }
+
+    // Add rules for typing status
+    match /typing/{chatId} {
+      allow read, write: if request.auth != null && 
+        chatId.matches('^[^_]+_[^_]+$') && // Ensure chatId format is valid
+        chatId.split('_').hasAny([request.auth.uid]); // User must be part of the chat
+    }
+
+    // Update messages collection rules to be more permissive for chat participants
+    match /messages/{messageId} {
+      allow read: if request.auth != null;
+      
+      allow create: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.chatId.split('_').hasAny([request.auth.uid]);
+      
+      allow delete: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+        
+      allow update: if false;
+    }
+
+    // Update users collection rules to allow status updates
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      
+      // Allow creating own user document
+      allow create: if request.auth != null && 
+                   request.auth.uid == userId;
+      
+      // Allow updating specific fields
+      allow update: if request.auth != null && 
+                   request.auth.uid == userId &&
+                   (
+                     // Allow updating status-related fields
+                     request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['status', 'lastSeen', 'notificationToken']) ||
+                     // Or allow updating profile fields
+                     request.resource.data.diff(resource.data).affectedKeys()
+                       .hasOnly(['displayName', 'photoURL', 'email'])
+                   );
+    }
+  }
+}

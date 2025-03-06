@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#1a73e8">
+    <meta name="theme-color" content="#000000">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="manifest" href="manifest.json">
     <title>Nova Comm - Login</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14,9 +14,13 @@
     <link rel="stylesheet" href="css/style.css">
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <!-- Optional: Add messaging only if needed -->
+    <!-- <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script> -->
+    <!-- Initialize Firebase first -->
     <script src="js/firebase-config.js"></script>
+    <!-- Then load login logic -->
     <script src="js/login.js"></script>
 </head>
 <body>
@@ -24,33 +28,48 @@
         <div class="login-box">
             <div class="logo">
                 <h1>Nova Comm</h1>
+                <p class="tagline">Connect instantly, chat seamlessly</p>
             </div>
-            <div class="social-buttons">
-                <button type="button" class="social-button" id="googleLogin">
-                    <img src="https://www.google.com/favicon.ico" alt="Google">
-                    Google
-                </button>
-                <button type="button" class="social-button" id="githubLogin">
-                    <img src="https://github.com/favicon.ico" alt="GitHub">
-                    GitHub
-                </button>
+            <div class="auth-options">
+                <div class="social-buttons">
+                    <button type="button" class="social-button" id="googleLogin">
+                        <i class="ri-google-fill"></i>
+                        Continue with Google
+                    </button>
+                    <button type="button" class="social-button" id="githubLogin">
+                        <i class="ri-github-fill"></i>
+                        Continue with GitHub
+                    </button>
+                </div>
+                <div class="social-login-divider">
+                    <span>or sign in with email</span>
+                </div>
+                <form id="loginForm" class="login-form">
+                    <div class="input-group">
+                        <div class="input-wrapper">
+                            <i class="ri-mail-line"></i>
+                            <input type="email" id="email" placeholder="Your email" required>
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <div class="input-wrapper">
+                            <i class="ri-lock-line"></i>
+                            <input type="password" id="password" placeholder="Password" required>
+                        </div>
+                    </div>
+                    <div class="terms-checkbox">
+                        <label class="checkbox-wrapper">
+                            <input type="checkbox" id="terms" required>
+                            <span class="checkmark"></span>
+                            <span class="label-text">I agree to the <a href="terms.html">Terms of Service</a></span>
+                        </label>
+                    </div>
+                    <button type="submit" class="login-button">
+                        <span>Login to Nova Comm</span>
+                        <i class="ri-arrow-right-line"></i>
+                    </button>
+                </form>
             </div>
-            <div class="social-login-divider">
-                <span>or continue with email</span>
-            </div>
-            <form id="loginForm">
-                <div class="input-group">
-                    <input type="email" id="email" placeholder="Email" required>
-                </div>
-                <div class="input-group">
-                    <input type="password" id="password" placeholder="Password" required>
-                </div>
-                <div class="checkbox-group">
-                    <input type="checkbox" id="terms" required>
-                    <label for="terms">I agree to the <a href="terms.html">Terms of Service</a></label>
-                </div>
-                <button type="submit">Login to Nova Comm</button>
-            </form>
         </div>
     </div>
 </body>

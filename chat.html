@@ -7,6 +7,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Add Remix Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
     <!-- Update Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
@@ -21,62 +23,107 @@
     <script src="js/firebase-config.js"></script>
     <!-- Then load app logic -->
     <script src="js/chat.js"></script>
+    <script src="js/notification-tester.js"></script>
     <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body>
     <div class="app-container">
         <aside class="contacts-sidebar">
             <div class="contacts-header">
-                <h2>Conversations</h2>
+                <div class="mobile-nav">
+                    <h2>Chats</h2>
+                    <button class="logout-btn" id="logoutBtn">
+                        <i class="ri-logout-box-line"></i>
+                    </button>
+                </div>
                 <button class="new-chat-btn" id="newChatBtn">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="12" y1="5" x2="12" y2="19"></line>
-                        <line x1="5" y1="12" x2="19" y2="12"></line>
-                    </svg>
-                    New Chat
+                    <i class="ri-add-line"></i>
+                    <span>New Chat</span>
                 </button>
             </div>
             <div class="contacts-search">
-                <input type="search" placeholder="Search conversations..." aria-label="Search conversations">
+                <div class="search-input-wrapper">
+                    <i class="ri-search-line"></i>
+                    <input type="search" placeholder="Search conversations..." aria-label="Search conversations">
+                </div>
             </div>
             <div class="contacts-list">
-                <!-- Conversations will be loaded here -->
+                <div class="no-chats">
+                    <i class="ri-chat-3-line"></i>
+                    <p>No conversations yet</p>
+                    <button class="start-chat-btn" onclick="document.getElementById('newChatBtn').click()">
+                        Start a new chat
+                    </button>
+                </div>
             </div>
         </aside>
         
-        <!-- Add Search Pane -->
         <div class="search-pane" id="searchPane">
             <div class="search-pane-header">
                 <button id="closeSearchBtn">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="19" y1="12" x2="5" y2="12"></line>
-                        <polyline points="12 19 5 12 12 5"></polyline>
-                    </svg>
+                    <i class="ri-arrow-left-line"></i>
                 </button>
-                <input type="search" placeholder="Search users..." id="userSearchInput" autocomplete="off">
+                <div class="search-input-wrapper">
+                    <i class="ri-search-line"></i>
+                    <input type="search" placeholder="Enter email address..." id="userSearchInput" autocomplete="off">
+                </div>
             </div>
             <div class="search-results" id="searchResults">
-                <!-- Search results will be displayed here -->
+                <div class="search-instructions">
+                    <i class="ri-mail-line"></i>
+                    <p>Enter a complete email address to find users</p>
+                </div>
             </div>
         </div>
 
         <main class="chat-container">
             <div class="chat-header">
-                <div class="user-info">
-                    <img src="https://d2zcpib8duehag.cloudfront.net/accountuser.png" alt="User Avatar" class="avatar">
-                    <span class="username">John Doe</span>
+                <div class="mobile-nav">
+                    <button class="menu-toggle" id="menuToggle">
+                        <i class="ri-menu-line"></i>
+                    </button>
+                    <button class="back-to-contacts" id="backToContacts">
+                        <i class="ri-arrow-left-line"></i>
+                        <span>Back</span>
+                    </button>
+                    <div class="user-info">
+                        <div class="avatar-container">
+                            <img src="" alt="User Avatar" class="avatar">
+                            <span class="status-indicator"></span>
+                        </div>
+                        <div class="user-details">
+                            <span class="username">Select a chat</span>
+                            <span class="status">No chat selected</span>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="messages" id="messageArea">
-                <!-- Messages will be inserted here -->
+                <div class="welcome-screen">
+                    <div class="welcome-icon">
+                        <i class="ri-chat-smile-2-line"></i>
+                    </div>
+                    <h2>Welcome to Nova Comm</h2>
+                    <p>Select a chat to start messaging</p>
+                </div>
             </div>
             <div class="message-input">
                 <div class="message-input-container">
-                    <input type="text" placeholder="Message">
-                    <button>Send</button>
+                    <input type="text" placeholder="Type a message..." disabled>
+                    <button disabled>
+                        <i class="ri-send-plane-fill"></i>
+                    </button>
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- Add loading overlay -->
+    <div class="loading-overlay">
+        <div class="loader"></div>
     </div>
 </body>
 </html>
