@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <!-- Update PWA meta tags -->
     <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#000000">
     
@@ -46,9 +46,14 @@
             <div class="contacts-header">
                 <div class="mobile-nav">
                     <h2>Chats</h2>
-                    <button class="logout-btn" id="logoutBtn">
-                        <i class="ri-logout-box-line"></i>
-                    </button>
+                    <div class="header-actions">
+                        <a href="settings.html" class="settings-btn">
+                            <i class="ri-settings-3-line"></i>
+                        </a>
+                        <button class="logout-btn" id="logoutBtn">
+                            <i class="ri-logout-box-line"></i>
+                        </button>
+                    </div>
                 </div>
                 <button class="new-chat-btn" id="newChatBtn">
                     <i class="ri-add-line"></i>

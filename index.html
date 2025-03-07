@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#000000">
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="manifest" href="manifest.json">
     <title>Nova Comm - Login</title>
@@ -14,10 +14,9 @@
     <link rel="stylesheet" href="css/style.css">
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-    <!-- Optional: Add messaging only if needed -->
-    <!-- <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script> -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
     <!-- Initialize Firebase first -->
     <script src="js/firebase-config.js"></script>
     <!-- Then load login logic -->
@@ -57,18 +56,29 @@
                             <input type="password" id="password" placeholder="Password" required>
                         </div>
                     </div>
-                    <div class="terms-checkbox">
-                        <label class="checkbox-wrapper">
-                            <input type="checkbox" id="terms" required>
-                            <span class="checkmark"></span>
-                            <span class="label-text">I agree to the <a href="terms.html">Terms of Service</a></span>
-                        </label>
+                    <div class="form-actions">
+                        <button type="submit" class="login-button">
+                            <span>Sign In</span>
+                            <i class="ri-arrow-right-line"></i>
+                        </button>
                     </div>
-                    <button type="submit" class="login-button">
-                        <span>Login to Nova Comm</span>
-                        <i class="ri-arrow-right-line"></i>
-                    </button>
+                    <div class="form-footer">
+                        <a href="https://account.nova.xxavvgroup.com/forgot-password" class="forgot-password">
+                            Forgot password?
+                        </a>
+                    </div>
                 </form>
+            </div>
+            <div class="signup-prompt">
+                <p>Don't have an account? <a href="https://account.nova.xxavvgroup.com" class="signup-link">Create one</a></p>
+            </div>
+        </div>
+        <div class="login-footer">
+            <p>&copy;2025 xxavvTechnologies</p>
+            <div class="footer-links">
+                <a href="https://tech.xxavvgroup.com/help-center/xts1-hc004">Terms</a>
+                <a href="https://tech.xxavvgroup.com/help-center/xts1-hc005">Privacy</a>
+                <a href="https://tech.xxavvgroup.com/helpcenter">Help Center</a>
             </div>
         </div>
     </div>

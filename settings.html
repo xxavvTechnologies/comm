@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Nova Comm - Settings</title>
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/settings.js"></script>
+</head>
+<body>
+    <div class="settings-container">
+        <div class="settings-header">
+            <button onclick="history.back()" class="back-button">
+                <i class="ri-arrow-left-line"></i>
+                <span>Back</span>
+            </button>
+            <h1>Settings</h1>
+        </div>
+
+        <div class="settings-content">
+            <div class="settings-section">
+                <h2>Profile</h2>
+                <div class="profile-settings">
+                    <div class="avatar-upload">
+                        <img src="" alt="Profile Picture" id="profilePicture" class="avatar large">
+                        <button class="change-avatar" id="changeAvatar">
+                            <i class="ri-camera-line"></i>
+                        </button>
+                    </div>
+                    <div class="profile-fields">
+                        <div class="input-group">
+                            <label for="displayName">Display Name</label>
+                            <input type="text" id="displayName" placeholder="Your name">
+                        </div>
+                        <div class="input-group">
+                            <label for="email">Email</label>
+                            <input type="email" id="email" disabled>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h2>Notifications</h2>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <span>Message Notifications</span>
+                        <span class="setting-description">Get notified when you receive messages</span>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="messageNotifications">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <span>Sound</span>
+                        <span class="setting-description">Play sound when receiving messages</span>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="soundEnabled">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h2>Privacy</h2>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <span>Read Receipts</span>
+                        <span class="setting-description">Let others know when you've read their messages</span>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="readReceipts">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <span>Online Status</span>
+                        <span class="setting-description">Show when you're online</span>
+                    </div>
+                    <label class="toggle">
+                        <input type="checkbox" id="onlineStatus">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="settings-section danger-zone">
+                <h2>Account</h2>
+                <button class="danger-button" id="logoutButton">
+                    <i class="ri-logout-box-line"></i>
+                    Sign Out
+                </button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

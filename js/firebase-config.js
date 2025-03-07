@@ -11,62 +11,52 @@ const firebaseConfig = {
 
 // Initialize Firebase
 try {
+    // Initialize the Firebase app first
     const app = firebase.initializeApp(firebaseConfig);
     
-    // Initialize Realtime Database first for presence system
-    window.rtdb = firebase.database();
-    window.rtdb.goOnline();
-    
-    // Then initialize other services
+    // Initialize services and make them globally available
     window.db = firebase.firestore();
     window.auth = firebase.auth();
-    
-    // Initialize providers
+    window.storage = firebase.storage();
     window.googleProvider = new firebase.auth.GoogleAuthProvider();
     window.githubProvider = new firebase.auth.GithubAuthProvider();
 
-    // Initialize messaging
-    if ('Notification' in window && firebase.messaging.isSupported()) {
-        window.messaging = firebase.messaging();
-        window.messaging.onMessage((payload) => {
-            console.log('Received message:', payload);
+    // Initialize Realtime Database only if the SDK is loaded
+    if (firebase.database) {
+        window.rtdb = firebase.database();
+        window.rtdb.goOnline();
+
+        // Add connection state handler
+        window.rtdb.ref('.info/connected').on('value', (snapshot) => {
+            if (snapshot.val() === true) {
+                console.log('Connected to Realtime Database');
+            } else {
+                console.log('Disconnected from Realtime Database');
+            }
         });
     }
 
-    // Configure Firestore settings with rate limiting
+    // Configure auth persistence
+    window.auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
+
+    // Add auth state listener
+    window.auth.onAuthStateChanged(user => {
+        if (user) {
+            window.db.collection('users').doc(user.uid).set({
+                email: user.email,
+                displayName: user.displayName || user.email,
+                photoURL: user.photoURL,
+                lastSeen: firebase.firestore.FieldValue.serverTimestamp(),
+                status: 'online'
+            }, { merge: true });
+        }
+    });
+
+    // Configure Firestore settings
     window.db.settings({
         cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
         merge: true,
         ignoreUndefinedProperties: true
-    });
-
-    // Add rate limiting metadata
-    window.db.rateLimit = {
-        maxWritesPerHour: 20000, // Adjust based on your Firebase plan
-        currentWrites: 0,
-        lastReset: Date.now(),
-        
-        checkLimit() {
-            const now = Date.now();
-            if (now - this.lastReset > 3600000) { // 1 hour
-                this.currentWrites = 0;
-                this.lastReset = now;
-            }
-            return this.currentWrites < this.maxWritesPerHour;
-        },
-        
-        incrementWrites() {
-            this.currentWrites++;
-        }
-    };
-
-    // Add connection state handler
-    window.rtdb.ref('.info/connected').on('value', (snapshot) => {
-        if (snapshot.val() === true) {
-            console.log('Connected to Realtime Database');
-        } else {
-            console.log('Disconnected from Realtime Database');
-        }
     });
 
 } catch (error) {

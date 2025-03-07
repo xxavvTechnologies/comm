@@ -1,10 +1,14 @@
 document.addEventListener('DOMContentLoaded', async function() {
     try {
+        // Wait for Firebase to initialize
+        if (!window.auth) {
+            throw new Error('Firebase Auth not initialized');
+        }
+
         // Initialize UI elements
         const loginForm = document.getElementById('loginForm');
         const googleBtn = document.getElementById('googleLogin');
         const githubBtn = document.getElementById('githubLogin');
-        const termsCheckbox = document.getElementById('terms');
         const submitBtn = loginForm.querySelector('button[type="submit"]');
         
         // Show loading state
@@ -21,12 +25,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Handle form submission
         loginForm?.addEventListener('submit', async function(e) {
             e.preventDefault();
-            
-            if (!termsCheckbox?.checked) {
-                alert('Please agree to the Terms of Service');
-                return;
-            }
-
             setLoading(true);
             
             try {
@@ -37,25 +35,26 @@ document.addEventListener('DOMContentLoaded', async function() {
                 window.location.href = 'chat.html';
             } catch (error) {
                 console.error("Login error:", error);
-                alert(error.message || 'Login failed');
+                if (error.code === 'auth/user-not-found') {
+                    window.location.href = 'https://account.nova.xxavvgroup.com';
+                } else {
+                    alert(error.message || 'Login failed. Please try again.');
+                }
                 setLoading(false);
             }
         });
 
-        // Social logins
+        // Social login handler
         const socialLogin = async (provider) => {
             setLoading(true);
             try {
                 const result = await auth.signInWithPopup(provider);
                 
-                // Update user profile in main users collection
+                // Update user status
                 await db.collection('users').doc(result.user.uid).set({
-                    email: result.user.email,
-                    displayName: result.user.displayName || result.user.email,
-                    photoURL: result.user.photoURL,
                     lastSeen: firebase.firestore.FieldValue.serverTimestamp(),
                     status: 'online'
-                }, { merge: true }); // Use merge to preserve existing user data
+                }, { merge: true });
 
                 window.location.href = 'chat.html';
             } catch (error) {
@@ -65,10 +64,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
         };
 
-        // Google login
+        // Social login buttons
         googleBtn?.addEventListener('click', () => socialLogin(googleProvider));
-
-        // GitHub login
         githubBtn?.addEventListener('click', () => socialLogin(githubProvider));
 
         // Check existing session
@@ -80,5 +77,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     } catch (error) {
         console.error("Login initialization error:", error);
+        alert('Unable to initialize login. Please refresh the page.');
     }
 });
