@@ -2,7 +2,19 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <!-- Update PWA meta tags -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
+    
+    <!-- Add PWA icons -->
+    <link rel="icon" type="image/png" sizes="192x192" href="img/icons/icon-192.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="img/icons/apple-icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="img/icons/icon-512.png">
+    <link rel="apple-touch-icon" sizes="512x512" href="img/icons/apple-icon-512.png">
+
     <title>Nova Comm - Chat</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,6 +27,8 @@
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
+    <!-- Add Firebase Realtime Database SDK after other Firebase scripts -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
     <script>
         // Allow cookies for Firebase
         document.cookie = "firebase-allow-cookies=1; SameSite=None; Secure";
@@ -25,9 +39,6 @@
     <script src="js/chat.js"></script>
     <script src="js/notification-tester.js"></script>
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#000000">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body>
     <div class="app-container">
@@ -85,10 +96,6 @@
                     <button class="menu-toggle" id="menuToggle">
                         <i class="ri-menu-line"></i>
                     </button>
-                    <button class="back-to-contacts" id="backToContacts">
-                        <i class="ri-arrow-left-line"></i>
-                        <span>Back</span>
-                    </button>
                     <div class="user-info">
                         <div class="avatar-container">
                             <img src="" alt="User Avatar" class="avatar">
@@ -96,7 +103,10 @@
                         </div>
                         <div class="user-details">
                             <span class="username">Select a chat</span>
-                            <span class="status">No chat selected</span>
+                            <span class="status">
+                                <i class="ri-time-line"></i>
+                                No chat selected
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -124,6 +134,12 @@
     <!-- Add loading overlay -->
     <div class="loading-overlay">
         <div class="loader"></div>
+    </div>
+
+    <!-- Add drag reply indicator -->
+    <div class="drag-reply-indicator">
+        <i class="ri-reply-line"></i>
+        <span>Drop to reply</span>
     </div>
 </body>
 </html>

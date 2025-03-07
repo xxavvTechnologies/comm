@@ -1,0 +1,24 @@
+{
+  "rules": {
+    ".read": "auth != null",
+    ".write": "auth != null",
+    "status": {
+      "$uid": {
+        "state": {
+          ".read": "auth != null",
+          ".write": "$uid === auth.uid"
+        },
+        "last_changed": {
+          ".read": "auth != null",
+          ".write": "$uid === auth.uid"
+        }
+      }
+    },
+    "connections": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "$uid === auth.uid"
+      }
+    }
+  }
+}

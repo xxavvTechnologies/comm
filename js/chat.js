@@ -27,6 +27,140 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Add write queue management
+    const writeQueue = {
+        operations: [],
+        isProcessing: false,
+        batchSize: 10,
+        batchDelay: 5000, // 5 seconds between batches
+
+        add(operation) {
+            this.operations.push(operation);
+            if (!this.isProcessing) {
+                this.processBatch();
+            }
+        },
+
+        async processBatch() {
+            if (this.operations.length === 0) {
+                this.isProcessing = false;
+                return;
+            }
+
+            this.isProcessing = true;
+            const batch = this.operations.slice(0, this.batchSize);
+            
+            try {
+                const writeBatch = db.batch();
+                batch.forEach(op => {
+                    const { ref, data } = op;
+                    writeBatch.update(ref, data);
+                });
+                
+                await writeBatch.commit();
+                
+                // Remove processed operations
+                this.operations = this.operations.slice(this.batchSize);
+                
+                // Process next batch after delay
+                setTimeout(() => this.processBatch(), this.batchDelay);
+            } catch (error) {
+                console.error('Error processing write batch:', error);
+                // On error, wait longer before retrying
+                setTimeout(() => this.processBatch(), this.batchDelay * 2);
+            }
+        }
+    };
+
+    // Update the read status function to use queue
+    async function updateReadStatus(messageId, readStatus) {
+        try {
+            const messageRef = db.collection('messages').doc(messageId);
+            writeQueue.add({
+                ref: messageRef,
+                data: {
+                    readBy: firebase.firestore.FieldValue.arrayUnion(currentUser.uid),
+                    readAt: firebase.firestore.FieldValue.serverTimestamp()
+                }
+            });
+        } catch (error) {
+            console.error('Error queueing read status update:', error);
+        }
+    }
+
+    // Add read receipt manager near the top with other declarations
+    const readReceiptManager = {
+        localCache: new Set(),
+        pendingUpdates: new Map(),
+        batchTimeout: null,
+        retryCount: 0,
+        maxRetries: 3,
+
+        markAsRead(messageId) {
+            if (this.localCache.has(messageId)) return;
+            
+            this.localCache.add(messageId);
+            this.pendingUpdates.set(messageId, Date.now());
+            this.scheduleBatch();
+        },
+
+        scheduleBatch() {
+            if (this.batchTimeout) return;
+            
+            this.batchTimeout = setTimeout(() => {
+                this.processBatch();
+            }, this.getBackoffDelay());
+        },
+
+        async processBatch() {
+            if (this.pendingUpdates.size === 0) {
+                this.batchTimeout = null;
+                return;
+            }
+
+            const batch = db.batch();
+            const updates = Array.from(this.pendingUpdates.entries())
+                .slice(0, 10); // Process max 10 at a time
+
+            updates.forEach(([messageId]) => {
+                const ref = db.collection('messages').doc(messageId);
+                batch.update(ref, {
+                    readBy: firebase.firestore.FieldValue.arrayUnion(currentUser.uid),
+                    readAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            });
+
+            try {
+                await batch.commit();
+                // Clear successful updates
+                updates.forEach(([messageId]) => {
+                    this.pendingUpdates.delete(messageId);
+                });
+                this.retryCount = 0;
+            } catch (error) {
+                console.error('Error updating read receipts:', error);
+                this.retryCount++;
+                if (this.retryCount < this.maxRetries) {
+                    setTimeout(() => this.scheduleBatch(), this.getBackoffDelay());
+                }
+            }
+
+            this.batchTimeout = null;
+            if (this.pendingUpdates.size > 0) {
+                this.scheduleBatch();
+            }
+        },
+
+        getBackoffDelay() {
+            return Math.min(1000 * Math.pow(2, this.retryCount), 30000);
+        }
+    };
+
+    // Update the read status function to use the manager
+    function updateReadStatus(messageId) {
+        readReceiptManager.markAsRead(messageId);
+    }
+
     // DOM Elements with null checks
     const messageArea = document.getElementById('messageArea');
     const messageInput = document.querySelector('.message-input input');
@@ -98,46 +232,90 @@ document.addEventListener('DOMContentLoaded', function() {
     function setupUserStatus() {
         if (!currentUser) return;
         
-        userStatusRef = db.collection('users').doc(currentUser.uid);
-        
-        // Set initial status
-        userStatusRef.set({
-            email: currentUser.email,
-            displayName: currentUser.displayName || currentUser.email,
-            photoURL: currentUser.photoURL,
-            status: 'online',
-            lastSeen: firebase.firestore.FieldValue.serverTimestamp()
-        }, { merge: true }).catch(console.error);
-        
-        // Update status periodically
-        setInterval(() => {
-            if (currentUser) {
-                userStatusRef.update({
-                    lastSeen: firebase.firestore.FieldValue.serverTimestamp()
-                }).catch(console.error);
-            }
-        }, 60000);
+        // References
+        const userStatusFirestoreRef = db.collection('users').doc(currentUser.uid);
+        const userStatusDatabaseRef = firebase.database().ref('/status/' + currentUser.uid);
 
-        // Handle disconnect
-        window.addEventListener('beforeunload', () => {
-            if (userStatusRef) {
-                userStatusRef.update({
-                    status: 'offline',
-                    lastSeen: firebase.firestore.FieldValue.serverTimestamp()
-                });
+        const isOfflineForDatabase = {
+            state: 'offline',
+            last_changed: firebase.database.ServerValue.TIMESTAMP,
+        };
+
+        const isOnlineForDatabase = {
+            state: 'online',
+            last_changed: firebase.database.ServerValue.TIMESTAMP,
+        };
+
+        const isOfflineForFirestore = {
+            status: 'offline',
+            lastSeen: firebase.firestore.FieldValue.serverTimestamp(),
+        };
+
+        const isOnlineForFirestore = {
+            status: 'online',
+            lastSeen: firebase.firestore.FieldValue.serverTimestamp(),
+        };
+
+        // Create a reference to the special '.info/connected' path
+        const connectionRef = firebase.database().ref('.info/connected');
+
+        // When the client's connection state changes...
+        connectionRef.on('value', async (snapshot) => {
+            if (snapshot.val() === false) {
+                // Instead of waiting for disconnect, update Firestore immediately
+                await userStatusFirestoreRef.update(isOfflineForFirestore);
+                return;
+            }
+
+            try {
+                // When we lose connection, update the Realtime Database
+                await userStatusDatabaseRef.onDisconnect().set(isOfflineForDatabase);
+                
+                // Update both databases to show we're online
+                await Promise.all([
+                    userStatusDatabaseRef.set(isOnlineForDatabase),
+                    userStatusFirestoreRef.update(isOnlineForFirestore)
+                ]);
+            } catch (error) {
+                console.error('Error setting up presence:', error);
             }
         });
 
-        // Initialize typing reference
-        typingRef = db.collection('typing').doc(currentChat || 'dummy');
-        
-        // Setup typing listener when chat changes
-        messageInput.addEventListener('input', handleTyping);
+        // Handle tab visibility changes
+        document.addEventListener('visibilitychange', async () => {
+            try {
+                const updates = document.visibilityState === 'hidden' 
+                    ? [
+                        userStatusDatabaseRef.set(isOfflineForDatabase),
+                        userStatusFirestoreRef.update(isOfflineForFirestore)
+                    ]
+                    : [
+                        userStatusDatabaseRef.set(isOnlineForDatabase),
+                        userStatusFirestoreRef.update(isOnlineForFirestore)
+                    ];
+                
+                await Promise.all(updates);
+            } catch (error) {
+                console.error('Error updating presence:', error);
+            }
+        });
+
+        // Handle page unload
+        window.addEventListener('beforeunload', async () => {
+            try {
+                await Promise.all([
+                    userStatusDatabaseRef.set(isOfflineForDatabase),
+                    userStatusFirestoreRef.update(isOfflineForFirestore)
+                ]);
+            } catch (error) {
+                console.error('Error updating presence:', error);
+            }
+        });
     }
 
     // Add typing handler
     function handleTyping() {
-        if (!currentChat) return;
+        if (!currentChat || !typingRef || !currentUser) return;
         
         // Set typing status
         typingRef.set({
@@ -155,12 +333,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Stop typing after 1.5 seconds of no input
         typingTimeout = setTimeout(() => {
-            typingRef.set({
-                [`${currentUser.uid}`]: {
-                    typing: false,
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                }
-            }, { merge: true });
+            if (typingRef && currentUser) {
+                typingRef.set({
+                    [`${currentUser.uid}`]: {
+                        typing: false,
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    }
+                }, { merge: true });
+            }
             
             // Hide self typing indicator
             updateSelfTypingIndicator(false);
@@ -349,14 +529,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 .where('chatId', '==', chatId)
                 .orderBy('timestamp', 'asc')  // Changed to ascending order
                 .onSnapshot((snapshot) => {
+                    const unreadMessages = [];
+                    
                     snapshot.docChanges().forEach((change) => {
                         if (change.type === 'added') {
                             const message = change.doc.data();
                             const messageId = change.doc.id;
                             
-                            // Mark message as read if it's not our own
-                            if (message.userId !== currentUser.uid) {
-                                updateReadStatus(messageId, true);
+                            // Collect unread messages
+                            if (message.userId !== currentUser.uid && 
+                                !message.readBy?.includes(currentUser.uid)) {
+                                unreadMessages.push(messageId);
                             }
                             
                             if (!document.getElementById(messageId)) {
@@ -372,6 +555,15 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     });
 
+                    // Batch update read status for unread messages
+                    if (unreadMessages.length > 0) {
+                        // Split into smaller batches if needed
+                        while (unreadMessages.length) {
+                            const batch = unreadMessages.splice(0, 10);
+                            batch.forEach(messageId => updateReadStatus(messageId));
+                        }
+                    }
+                    
                     // Scroll to bottom after new messages
                     if (messageArea) {
                         messageArea.scrollTop = messageArea.scrollHeight;
@@ -385,20 +577,77 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Add function to update read receipt display
     function updateReadReceipt(messageEl, messageData) {
-        let receipt = messageEl.querySelector('.read-receipt');
-        if (!receipt) {
-            receipt = document.createElement('div');
-            receipt.className = 'read-receipt';
-            messageEl.querySelector('.message-content').appendChild(receipt);
+        let footer = messageEl.querySelector('.message-footer');
+        if (!footer) {
+            footer = document.createElement('div');
+            footer.className = 'message-footer';
+            messageEl.appendChild(footer);
         }
 
-        if (messageData.readBy?.includes(currentUser.uid)) {
-            receipt.innerHTML = '<i class="ri-check-double-line"></i>';
-            receipt.classList.add('read');
-        } else {
-            receipt.innerHTML = '<i class="ri-check-line"></i>';
-            receipt.classList.remove('read');
+        const timestamp = messageData.timestamp?.toDate() || new Date();
+        const timeString = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        footer.innerHTML = `
+            <span class="message-timestamp">${timeString}</span>
+            ${messageData.userId === currentUser.uid ? `
+                <div class="read-receipt ${messageData.readBy?.length ? 'read' : ''}" title="${getReadReceiptTitle(messageData)}">
+                    <i class="ri-${messageData.readBy?.length ? 'check-double' : 'check'}-line"></i>
+                    ${messageData.readBy?.length > 0 ? `<span class="read-count">${messageData.readBy.length}</span>` : ''}
+                </div>
+            ` : ''}
+        `;
+
+        // Add hover state data
+        if (messageData.readBy?.length) {
+            const readReceipt = footer.querySelector('.read-receipt');
+            readReceipt.dataset.readTimestamp = messageData.readAt?.toDate()?.toLocaleString() || 'Recently';
         }
+    }
+
+    // Helper function to get read receipt tooltip text
+    function getReadReceiptTitle(messageData) {
+        if (!messageData.readBy?.length) return 'Not read yet';
+        if (messageData.readAt) {
+            return `Read ${formatLastSeen(messageData.readAt.toDate())}`;
+        }
+        return 'Read';
+    }
+
+    // Update the read status with better error handling
+    async function updateReadStatus(messageId, readStatus) {
+        try {
+            const messageRef = db.collection('messages').doc(messageId);
+            writeQueue.add({
+                ref: messageRef,
+                data: {
+                    readBy: firebase.firestore.FieldValue.arrayUnion(currentUser.uid),
+                    readAt: firebase.firestore.FieldValue.serverTimestamp()
+                }
+            });
+        } catch (error) {
+            console.error('Error queueing read status update:', error);
+        }
+    }
+
+    // Add read receipt observer
+    function setupReadReceiptObserver() {
+        if (typeof IntersectionObserver === 'undefined') return;
+        
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const messageEl = entry.target;
+                    const messageId = messageEl.id;
+                    if (messageEl.dataset.userId !== currentUser.uid) {
+                        readReceiptManager.markAsRead(messageId);
+                    }
+                }
+            });
+        }, { threshold: 0.5 });
+
+        // Observe existing and new messages
+        document.querySelectorAll('.message').forEach(el => observer.observe(el));
+        return observer;
     }
 
     // Add context menu HTML to the page
@@ -440,6 +689,51 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Add link preview functionality
+    async function loadLinkPreview(url, messageDiv) {
+        try {
+            // Create and add loading preview container
+            const previewContainer = document.createElement('div');
+            previewContainer.className = 'link-preview loading';
+            messageDiv.querySelector('.message-content').appendChild(previewContainer);
+
+            // Validate URL
+            const validUrl = url.match(/^(http(s)?:\/\/.)[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)$/);
+            if (!validUrl) {
+                previewContainer.remove();
+                return;
+            }
+
+            // Fetch preview data
+            const response = await fetch(`https://api.microlink.io?url=${encodeURIComponent(url)}`);
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                const { title, description, image } = data.data;
+                
+                if (!title && !description && !image) {
+                    previewContainer.remove();
+                    return;
+                }
+
+                previewContainer.innerHTML = `
+                    ${image?.url ? `<img src="${image.url}" alt="Link preview" loading="lazy">` : ''}
+                    <div class="link-preview-content">
+                        ${title ? `<div class="link-preview-title">${title}</div>` : ''}
+                        ${description ? `<div class="link-preview-description">${description}</div>` : ''}
+                        <div class="link-preview-domain">${new URL(url).hostname}</div>
+                    </div>
+                `;
+                previewContainer.classList.remove('loading');
+            } else {
+                previewContainer.remove();
+            }
+        } catch (error) {
+            console.error('Error loading link preview:', error);
+            messageDiv.querySelector('.link-preview')?.remove();
+        }
+    }
+
     // Fix date comparison function
     function isSameDay(date1, date2) {
         if (!date1 || !date2) return false;
@@ -451,10 +745,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Update the displayMessage function to include message ID and handle context menu
-    function displayMessage(message, messageId) {
+    async function displayMessage(message, messageId) {
         const messageDiv = document.createElement('div');
         messageDiv.id = messageId;
         messageDiv.className = `message ${message.userId === currentUser.uid ? 'sent' : 'received'}`;
+        messageDiv.draggable = true; // Enable dragging
         
         // Format the timestamp
         const timestamp = message.timestamp?.toDate() || new Date();
@@ -479,12 +774,12 @@ document.addEventListener('DOMContentLoaded', function() {
         if (message.replyTo) {
             const replyClass = message.userId === currentUser.uid ? 'sent' : 'received';
             replyHtml = `
-                <div class="reply-container ${replyClass}">
-                    <div class="reply-indicator">
-                        <i class="ri-reply-line"></i>
+                <div class="reply-preview">
+                    <div class="reply-author">
+                        ${message.replyToUser || 'User'}
                     </div>
                     <div class="reply-content">
-                        <div class="reply-text">${message.replyText}</div>
+                        ${message.replyText}
                     </div>
                 </div>
             `;
@@ -493,18 +788,22 @@ document.addEventListener('DOMContentLoaded', function() {
         // Process message text for links
         const processedText = processMessageText(message.text);
 
+        // Add swipe reply icon for mobile
+        const swipeReplyIcon = `<i class="ri-reply-line swipe-reply-icon"></i>`;
+
         messageDiv.innerHTML = `
+            ${swipeReplyIcon}
             ${replyHtml}
             <div class="message-content">
                 ${processedText}
-                <div class="message-info">
-                    <span class="message-timestamp">${timeString}</span>
-                    ${message.userId === currentUser.uid ? `
-                        <div class="read-receipt ${message.readBy?.length ? 'read' : ''}">
-                            <i class="ri-${message.readBy?.length ? 'check-double' : 'check'}-line"></i>
-                        </div>
-                    ` : ''}
-                </div>
+            </div>
+            <div class="message-footer">
+                <span class="message-timestamp">${timeString}</span>
+                ${message.userId === currentUser.uid ? `
+                    <div class="read-receipt ${message.readBy?.length ? 'read' : ''}">
+                        <i class="ri-${message.readBy?.length ? 'check-double' : 'check'}-line"></i>
+                    </div>
+                ` : ''}
             </div>
         `;
         messageDiv.dataset.date = timestamp;
@@ -539,76 +838,70 @@ document.addEventListener('DOMContentLoaded', function() {
             clearTimeout(longPressTimer);
         });
 
+        // Add drag and touch event listeners
+        setupDragToReply(messageDiv, message);
+        setupSwipeToReply(messageDiv, message);
+
         messageArea.appendChild(messageDiv);
     }
 
-    // Add link preview functionality
-    async function loadLinkPreview(url, messageDiv) {
-        try {
-            const previewContainer = document.createElement('div');
-            previewContainer.className = 'link-preview loading';
-            messageDiv.querySelector('.message-content').appendChild(previewContainer);
+    // Add drag-to-reply functionality
+    function setupDragToReply(messageEl, message) {
+        const dragIndicator = document.querySelector('.drag-reply-indicator');
 
-            const response = await fetch(`https://api.microlink.io?url=${encodeURIComponent(url)}&waitFor=networkidle0`);
-            const data = await response.json();
-            
-            if (data.status === 'success' && (data.data.image || data.data.description)) {
-                previewContainer.innerHTML = `
-                    ${data.data.image ? `<img src="${data.data.image.url}" alt="Link preview" loading="lazy">` : ''}
-                    <div class="link-preview-content">
-                        <div class="link-preview-title">${data.data.title || ''}</div>
-                        ${data.data.description ? `
-                            <div class="link-preview-description">${data.data.description}</div>
-                        ` : ''}
-                        <div class="link-preview-domain">${new URL(url).hostname}</div>
-                    </div>
-                `;
-            } else {
-                previewContainer.remove();
+        messageEl.addEventListener('dragstart', (e) => {
+            messageEl.classList.add('dragging');
+            dragIndicator.classList.add('active');
+            e.dataTransfer.setData('messageId', message.id);
+        });
+
+        messageEl.addEventListener('dragend', () => {
+            messageEl.classList.remove('dragging');
+            dragIndicator.classList.remove('active');
+        });
+
+        // Handle dropping on input area
+        document.querySelector('.message-input').addEventListener('dragover', (e) => {
+            e.preventDefault();
+        });
+
+        document.querySelector('.message-input').addEventListener('drop', (e) => {
+            e.preventDefault();
+            const messageId = e.dataTransfer.getData('messageId');
+            if (messageId) {
+                startReply(message);
             }
-        } catch (error) {
-            console.error('Error loading link preview:', error);
-            messageDiv.querySelector('.link-preview')?.remove();
-        }
+        });
     }
 
-    // Fix showContextMenu function to handle touch events properly
-    function showContextMenu(event, message, messageId) {
-        const menu = document.querySelector('.message-context-menu');
-        const deleteOption = menu.querySelector('.delete');
-        
-        // Only show delete for own messages
-        deleteOption.style.display = message.userId === currentUser.uid ? 'flex' : 'none';
-        
-        // Get coordinates, handling both mouse and touch events
-        const x = event.touches ? event.touches[0].clientX : event.clientX;
-        const y = event.touches ? event.touches[0].clientY : event.clientY;
-        
-        // Position menu, keeping it in viewport
-        const menuWidth = menu.offsetWidth;
-        const menuHeight = menu.offsetHeight;
-        const windowWidth = window.innerWidth;
-        const windowHeight = window.innerHeight;
-        
-        menu.style.left = `${Math.min(x, windowWidth - menuWidth - 10)}px`;
-        menu.style.top = `${Math.min(y, windowHeight - menuHeight - 10)}px`;
-        menu.classList.add('active');
-        
-        // Add action handlers
-        menu.querySelector('.copy').onclick = () => {
-            navigator.clipboard.writeText(message.text);
-            menu.classList.remove('active');
-        };
-        
-        menu.querySelector('.reply').onclick = () => {
-            startReply(message, messageId); // Pass messageId to startReply
-            menu.classList.remove('active');
-        };
-        
-        menu.querySelector('.delete').onclick = () => {
-            deleteMessage(messageId);
-            menu.classList.remove('active');
-        };
+    // Update setupSwipeToReply function with proper event handling
+    function setupSwipeToReply(messageEl, message) {
+        let touchStartX = 0;
+        let touchMoveX = 0;
+
+        messageEl.addEventListener('touchstart', (e) => {
+            touchStartX = e.touches[0].clientX;
+        });
+
+        messageEl.addEventListener('touchmove', (e) => {
+            touchMoveX = e.touches[0].clientX;
+            const swipeDistance = touchMoveX - touchStartX;
+            
+            if (swipeDistance > 0 && swipeDistance < 100) {
+                messageEl.classList.add('swiping');
+                messageEl.style.transform = `translateX(${swipeDistance}px)`;
+            }
+        });
+
+        messageEl.addEventListener('touchend', (e) => {
+            const swipeDistance = touchMoveX - touchStartX;
+            messageEl.style.transform = '';
+            messageEl.classList.remove('swiping');
+            
+            if (swipeDistance > 50) {
+                startReply(message);
+            }
+        });
     }
 
     // Show context menu
@@ -656,7 +949,8 @@ document.addEventListener('DOMContentLoaded', function() {
     function startReply(message, messageId) {
         replyingTo = {
             id: messageId,
-            text: message.text
+            text: message.text,
+            author: message.userEmail || 'User'
         };
         
         const input = document.querySelector('.message-input');
@@ -709,6 +1003,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (replyingTo && replyingTo.id) {
                 messageData.replyTo = replyingTo.id;
                 messageData.replyText = replyingTo.text;
+                messageData.replyToUser = replyingTo.author || 'User';
             }
 
             await db.collection('messages').add(messageData);
@@ -749,28 +1044,42 @@ document.addEventListener('DOMContentLoaded', function() {
     // Setup push notifications
     async function setupMessaging() {
         try {
+            // Check for service worker support
+            if (!('serviceWorker' in navigator)) {
+                console.log('Service Worker is not supported');
+                return;
+            }
+
+            // Register service worker first
+            const registration = await navigator.serviceWorker.register('firebase-messaging-sw.js', {
+                scope: '/'
+            });
+            
+            // Wait for the service worker to be ready
+            await navigator.serviceWorker.ready;
+
             if (!('Notification' in window)) {
                 console.log('This browser does not support notifications');
                 return;
             }
-    
+
             const permission = await Notification.requestPermission();
             if (permission !== 'granted') {
                 console.log('Notification permission not granted');
                 return;
             }
-    
+
             if (!window.messaging) {
                 console.error('Firebase messaging not initialized');
                 return;
             }
-    
+
             // Get token only if we have messaging and permission
             const token = await window.messaging.getToken({
                 vapidKey: "BIYJYMvPjag4l00oGUWRfFe5AVRHmgu0MBUs7_mCV1V2siT1U6_LpUj1aVqVd6bUdBAp6FbzWhjpY8JpyfetqPM",
-                serviceWorkerRegistration: await navigator.serviceWorker.getRegistration()
+                serviceWorkerRegistration: registration
             });
-    
+
             if (token && currentUser) {
                 await db.collection('users').doc(currentUser.uid).set({
                     email: currentUser.email,
@@ -780,15 +1089,18 @@ document.addEventListener('DOMContentLoaded', function() {
                     lastSeen: firebase.firestore.FieldValue.serverTimestamp()
                 }, { merge: true });
             }
-    
+
             // Handle foreground messages
             messaging.onMessage((payload) => {
                 console.log('Received foreground message:', payload);
                 // Add your notification display logic here
             });
-    
+
         } catch (error) {
             console.error("Error setting up notifications:", error);
+            if (error.name === 'AbortError') {
+                console.log('Service Worker registration failed. Notifications will not work.');
+            }
         }
     }
 
@@ -840,7 +1152,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                     <div class="user-details">
                         <span class="username">${userData.displayName || userData.email}</span>
-                        <span class="status">${userData.status === 'online' ? 'Online' : 'Last seen ' + formatLastSeen(userData.lastSeen?.toDate())}</span>
+                        <span class="status ${userData.status === 'online' ? 'online' : ''}">
+                            <i class="${userData.status === 'online' ? 'ri-checkbox-blank-circle-fill' : 'ri-time-line'}"></i>
+                            ${userData.status === 'online' ? 'Online' : 'Last seen ' + formatLastSeen(userData.lastSeen?.toDate())}
+                        </span>
                     </div>
                 `;
             }
@@ -874,13 +1189,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Add typing indicator update
     function updateTypingIndicator(isTyping) {
-        const typingIndicator = document.querySelector('.typing-indicator');
+        let typingIndicator = document.querySelector('.typing-indicator');
         
         if (isTyping) {
             if (!typingIndicator) {
-                const indicator = document.createElement('div');
-                indicator.className = 'message received typing-indicator';
-                indicator.innerHTML = `
+                typingIndicator = document.createElement('div');
+                typingIndicator.className = 'message received typing-indicator';
+                typingIndicator.innerHTML = `
                     <div class="message-content">
                         <div class="dots">
                             <span></span>
@@ -889,8 +1204,11 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                     </div>
                 `;
-                messageArea.appendChild(indicator);
-                messageArea.scrollTop = messageArea.scrollHeight;
+                messageArea?.appendChild(typingIndicator);
+                messageArea?.scrollTo({
+                    top: messageArea.scrollHeight,
+                    behavior: 'smooth'
+                });
             }
         } else {
             typingIndicator?.remove();
@@ -919,9 +1237,16 @@ document.addEventListener('DOMContentLoaded', function() {
             for (const doc of chatsQuery.docs) {
                 const message = doc.data();
                 const chatId = message.chatId;
-                const [user1, user2] = chatId.split('_');
-                const otherUserId = user1 === currentUser.uid ? user2 : user1;
-                uniqueUsers.add(otherUserId);
+                
+                // Skip if chatId is missing or invalid
+                if (!chatId || typeof chatId !== 'string') continue;
+                
+                const users = chatId.split('_');
+                // Skip if chat ID format is invalid
+                if (users.length !== 2) continue;
+                
+                const otherUserId = users[0] === currentUser.uid ? users[1] : users[0];
+                if (otherUserId) uniqueUsers.add(otherUserId);
             }
 
             // Show empty state if no conversations
@@ -935,14 +1260,24 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Fetch and display user details for each unique contact
             for (const userId of uniqueUsers) {
-                const userDoc = await db.collection('users').doc(userId).get();
-                if (userDoc.exists) {
-                    const userData = userDoc.data();
-                    addContactToList(userData, userId);
+                try {
+                    const userDoc = await db.collection('users').doc(userId).get();
+                    if (userDoc.exists) {
+                        const userData = userDoc.data();
+                        addContactToList(userData, userId);
+                    }
+                } catch (error) {
+                    console.warn(`Error loading contact ${userId}:`, error);
+                    // Continue with other contacts even if one fails
+                    continue;
                 }
             }
         } catch (error) {
             console.error("Error loading recent contacts:", error);
+            // Show empty state on error
+            if (document.querySelector('.no-chats')) {
+                document.querySelector('.no-chats').style.display = 'flex';
+            }
         }
     }
 
@@ -1008,6 +1343,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 window.location.href = 'index.html';
             } catch (error) {
                 console.error('Error logging out:', error);
+            }
+        });
+    }
+
+    // Update message input event listeners
+    if (messageInput) {
+        messageInput.addEventListener('input', handleTyping);
+        messageInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
             }
         });
     }
