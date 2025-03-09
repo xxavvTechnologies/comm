@@ -17,9 +17,23 @@ try {
     // Initialize services and make them globally available
     window.db = firebase.firestore();
     window.auth = firebase.auth();
-    window.storage = firebase.storage();
     window.googleProvider = new firebase.auth.GoogleAuthProvider();
     window.githubProvider = new firebase.auth.GithubAuthProvider();
+
+    // Initialize Firebase Messaging
+    if (firebase.messaging && 'serviceWorker' in navigator) {
+        window.messaging = firebase.messaging();
+        window.messaging.onMessage((payload) => {
+            console.log('Foreground message:', payload);
+            // Handle foreground messages here
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification(payload.notification.title, {
+                    body: payload.notification.body,
+                    icon: '/img/icons/icon-192.png'
+                });
+            }
+        });
+    }
 
     // Initialize Realtime Database only if the SDK is loaded
     if (firebase.database) {

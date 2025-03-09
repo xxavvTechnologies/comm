@@ -14,10 +14,18 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
     }
 
-    // Add near the top of the file, with other declarations
+    // Global declarations
     let isFirebaseInitialized = false;
     let typingTimeout;
     let typingRef;
+    let unreadCounts = new Map();
+    let currentChats = new Set();
+    let isRecording = false;
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let currentUser = null;
+    let currentChat = null;
+    let messageUnsubscribe = null;
 
     // Add new function near the top with other declarations
     function updateReadStatus(messageId, readStatus) {
@@ -83,6 +91,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     readAt: firebase.firestore.FieldValue.serverTimestamp()
                 }
             });
+            await updateUnreadCounts();
         } catch (error) {
             console.error('Error queueing read status update:', error);
         }
@@ -163,7 +172,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // DOM Elements with null checks
     const messageArea = document.getElementById('messageArea');
-    const messageInput = document.querySelector('.message-input input');
+    const messageInput = document.querySelector('.message-input textarea');
     const sendButton = document.querySelector('.message-input button');
     const searchPane = document.getElementById('searchPane');
     const newChatBtn = document.getElementById('newChatBtn');
@@ -175,10 +184,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const contactsSidebar = document.querySelector('.contacts-sidebar');
     const loadingOverlay = document.querySelector('.loading-overlay');
     
-    let currentUser = null;
-    let currentChat = null;
-    let messageUnsubscribe = null;
-
     // Initialize UI
     const defaultAvatar = 'https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y&s=64';
     document.querySelectorAll('.avatar').forEach(img => {
@@ -222,9 +227,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Update the message input state
     function updateMessageInputState(enabled) {
-        messageInput.disabled = !enabled;
-        sendButton.disabled = !enabled;
-        messageInput.placeholder = enabled ? "Type a message..." : "Select a chat to start messaging";
+        if (messageInput) {
+            messageInput.disabled = !enabled;
+            messageInput.placeholder = enabled ? "Type a message..." : "Select a chat to start messaging";
+        }
+        if (sendButton) {
+            sendButton.disabled = !enabled;
+        }
     }
 
     // Update user status tracking to use main users collection
@@ -498,6 +507,7 @@ document.addEventListener('DOMContentLoaded', function() {
             isFirebaseInitialized = true;
             setupMessaging();
             setupUserStatus();
+            setupUnreadListener();
             // Don't load messages until a chat is selected
             loadRecentContacts();
         } else {
@@ -505,7 +515,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    // Update the loadMessages function
+    // Update the loadMessages function to better handle message updates
     function loadMessages(chatId) {
         try {
             if (!isFirebaseInitialized || !chatId) {
@@ -547,10 +557,10 @@ document.addEventListener('DOMContentLoaded', function() {
                             }
                         }
                         if (change.type === 'modified') {
-                            // Update read receipts when readBy array changes
                             const messageEl = document.getElementById(change.doc.id);
-                            if (messageEl) {
-                                updateReadReceipt(messageEl, change.doc.data());
+                            const messageData = change.doc.data();
+                            if (messageEl && messageData) {
+                                updateReadReceipt(messageEl, messageData);
                             }
                         }
                     });
@@ -575,8 +585,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Add function to update read receipt display
+    // Add function to safely update read receipt display
     function updateReadReceipt(messageEl, messageData) {
+        if (!messageEl || !messageData) return;
+
         let footer = messageEl.querySelector('.message-footer');
         if (!footer) {
             footer = document.createElement('div');
@@ -587,20 +599,25 @@ document.addEventListener('DOMContentLoaded', function() {
         const timestamp = messageData.timestamp?.toDate() || new Date();
         const timeString = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
-        footer.innerHTML = `
-            <span class="message-timestamp">${timeString}</span>
-            ${messageData.userId === currentUser.uid ? `
+        // Only show read receipt for sender's messages
+        if (messageData.userId === currentUser?.uid) {
+            footer.innerHTML = `
+                <span class="message-timestamp">${timeString}</span>
                 <div class="read-receipt ${messageData.readBy?.length ? 'read' : ''}" title="${getReadReceiptTitle(messageData)}">
                     <i class="ri-${messageData.readBy?.length ? 'check-double' : 'check'}-line"></i>
                     ${messageData.readBy?.length > 0 ? `<span class="read-count">${messageData.readBy.length}</span>` : ''}
                 </div>
-            ` : ''}
-        `;
+            `;
 
-        // Add hover state data
-        if (messageData.readBy?.length) {
-            const readReceipt = footer.querySelector('.read-receipt');
-            readReceipt.dataset.readTimestamp = messageData.readAt?.toDate()?.toLocaleString() || 'Recently';
+            // Add hover state data
+            if (messageData.readBy?.length) {
+                const readReceipt = footer.querySelector('.read-receipt');
+                if (readReceipt) {
+                    readReceipt.dataset.readTimestamp = messageData.readAt?.toDate()?.toLocaleString() || 'Recently';
+                }
+            }
+        } else {
+            footer.innerHTML = `<span class="message-timestamp">${timeString}</span>`;
         }
     }
 
@@ -615,6 +632,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Update the read status with better error handling
     async function updateReadStatus(messageId, readStatus) {
+        if (!messageId || !currentUser) return;
+        
         try {
             const messageRef = db.collection('messages').doc(messageId);
             writeQueue.add({
@@ -624,6 +643,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     readAt: firebase.firestore.FieldValue.serverTimestamp()
                 }
             });
+            await updateUnreadCounts();
         } catch (error) {
             console.error('Error queueing read status update:', error);
         }
@@ -671,11 +691,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Add link detection and sanitization
     function processMessageText(text) {
-        // URL regex with protocol required for safety
+        // First handle line breaks
+        const withLineBreaks = text.replace(/\n/g, '<br>');
+        
+        // Then handle URLs with protocol required for safety
         const urlRegex = /(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/g;
         
         // Replace URLs with sanitized anchor tags
-        return text.replace(urlRegex, (url) => {
+        return withLineBreaks.replace(urlRegex, (url) => {
             try {
                 const sanitizedUrl = new URL(url);
                 // Only allow specific protocols
@@ -744,21 +767,34 @@ document.addEventListener('DOMContentLoaded', function() {
                d1.getFullYear() === d2.getFullYear();
     }
 
+    // Add this helper function before displayMessage
+    function isSameTimestamp(date1, date2, threshold = 2) { // 2 minute threshold
+        if (!date1 || !date2) return false;
+        const d1 = new Date(date1);
+        const d2 = new Date(date2);
+        return Math.abs(d1 - d2) / 60000 < threshold; // Convert to minutes
+    }
+
     // Update the displayMessage function to include message ID and handle context menu
     async function displayMessage(message, messageId) {
         const messageDiv = document.createElement('div');
         messageDiv.id = messageId;
         messageDiv.className = `message ${message.userId === currentUser.uid ? 'sent' : 'received'}`;
         messageDiv.draggable = true; // Enable dragging
+        messageDiv.dataset.userId = message.userId; // Add userId for grouping
         
         // Format the timestamp
         const timestamp = message.timestamp?.toDate() || new Date();
         const timeString = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
+        // Check previous message for grouping
+        const lastMessage = messageArea.lastElementChild;
+        const shouldGroup = lastMessage?.classList.contains('message') && 
+                           lastMessage?.dataset.userId === message.userId &&
+                           isSameTimestamp(timestamp, new Date(lastMessage.dataset.timestamp));
+        
         // Add date divider if needed
         const dateString = timestamp.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
-        const lastMessage = messageArea.lastElementChild;
-        
         // Only add date divider if it's a message element and date is different
         if (!lastMessage || 
             (lastMessage.classList.contains('message') && 
@@ -791,22 +827,461 @@ document.addEventListener('DOMContentLoaded', function() {
         // Add swipe reply icon for mobile
         const swipeReplyIcon = `<i class="ri-reply-line swipe-reply-icon"></i>`;
 
+        // Add message type specific content
+        let messageContent = '';
+        switch (message.type) {
+            case 'file':
+                messageContent = createFilePreview(message);
+                break;
+            case 'voice':
+                messageContent = createVoiceMessage(message);
+                break;
+            default:
+                messageContent = processMessageText(message.text);
+        }
+
+        // Add forwarded indicator if needed
+        const forwardedHtml = message.forwardedFrom ? `
+            <div class="forward-indicator">
+                <i class="ri-share-forward-line"></i>
+                Forwarded
+            </div>
+        ` : '';
+
         messageDiv.innerHTML = `
             ${swipeReplyIcon}
             ${replyHtml}
+            ${forwardedHtml}
             <div class="message-content">
-                ${processedText}
+                ${messageContent}
             </div>
-            <div class="message-footer">
-                <span class="message-timestamp">${timeString}</span>
-                ${message.userId === currentUser.uid ? `
-                    <div class="read-receipt ${message.readBy?.length ? 'read' : ''}">
-                        <i class="ri-${message.readBy?.length ? 'check-double' : 'check'}-line"></i>
-                    </div>
-                ` : ''}
-            </div>
+            ${!shouldGroup ? `
+                <div class="message-footer">
+                    <span class="message-timestamp">${timeString}</span>
+                    ${message.userId === currentUser.uid ? `
+                        <div class="read-receipt ${message.readBy?.length ? 'read' : ''}">
+                            <i class="ri-${message.readBy?.length ? 'check-double' : 'check'}-line"></i>
+                        </div>
+                    ` : ''}
+                </div>
+            ` : ''}
         `;
         messageDiv.dataset.date = timestamp;
+        messageDiv.dataset.timestamp = timestamp;
+
+        // If this is a grouped message, add grouped class
+        if (shouldGroup) {
+            messageDiv.classList.add('grouped');
+            // Update last message's footer if it exists
+            if (lastMessage) {
+                const footer = lastMessage.querySelector('.message-footer');
+                if (footer) footer.remove();
+            }
+        }
+
+        // Lazy load link previews
+        const urls = message.text.match(/(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/g);
+        if (urls) {
+            setTimeout(() => loadLinkPreview(urls[0], messageDiv), 100);
+        }
+
+        // Add context menu handlers
+        let longPressTimer;
+        let touchStartEvent;
+        
+        messageDiv.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            showContextMenu(e, message, messageId);
+        });
+
+        messageDiv.addEventListener('touchstart', (e) => {
+            touchStartEvent = e;
+            longPressTimer = setTimeout(() => {
+                showContextMenu(touchStartEvent, message, messageId);
+            }, 500);
+        });
+
+        messageDiv.addEventListener('touchmove', () => {
+            clearTimeout(longPressTimer);
+        });
+
+        messageDiv.addEventListener('touchend', () => {
+            clearTimeout(longPressTimer);
+        });
+
+        // Add drag and touch event listeners
+        setupDragToReply(messageDiv, message);
+        setupSwipeToReply(messageDiv, message);
+
+        messageArea.appendChild(messageDiv);
+    }
+
+    // Add drag-to-reply functionality
+    function setupDragToReply(messageEl, message) {
+        const dragIndicator = document.querySelector('.drag-reply-indicator');
+
+        messageEl.addEventListener('dragstart', (e) => {
+            messageEl.classList.add('dragging');
+            dragIndicator.classList.add('active');
+            e.dataTransfer.setData('messageId', message.id);
+        });
+
+        messageEl.addEventListener('dragend', () => {
+            messageEl.classList.remove('dragging');
+            dragIndicator.classList.remove('active');
+        });
+
+        // Handle dropping on input area
+        document.querySelector('.message-input').addEventListener('dragover', (e) => {
+            e.preventDefault();
+        });
+
+        document.querySelector('.message-input').addEventListener('drop', (e) => {
+            e.preventDefault();
+            const messageId = e.dataTransfer.getData('messageId');
+            if (messageId) {
+                startReply(message);
+            }
+        });
+    }
+
+    // Update setupSwipeToReply function with proper event handling
+    function setupSwipeToReply(messageEl, message) {
+        let touchStartX = 0;
+        let touchMoveX = 0;
+
+        messageEl.addEventListener('touchstart', (e) => {
+            touchStartX = e.touches[0].clientX;
+        });
+
+        messageEl.addEventListener('touchmove', (e) => {
+            touchMoveX = e.touches[0].clientX;
+            const swipeDistance = touchMoveX - touchStartX;
+            
+            if (swipeDistance > 0 && swipeDistance < 100) {
+                messageEl.classList.add('swiping');
+                messageEl.style.transform = `translateX(${swipeDistance}px)`;
+            }
+        });
+
+        messageEl.addEventListener('touchend', (e) => {
+            const swipeDistance = touchMoveX - touchStartX;
+            messageEl.style.transform = '';
+            messageEl.classList.remove('swiping');
+            
+            if (swipeDistance > 50) {
+                startReply(message);
+            }
+        });
+    }
+
+    // Update showContextMenu function
+    function showContextMenu(event, message, messageId) {
+        const menu = document.querySelector('.message-context-menu');
+        const deleteOption = menu.querySelector('.delete');
+        const forwardOption = menu.querySelector('.forward');
+        
+        // Only show delete for own messages
+        deleteOption.style.display = message.userId === currentUser.uid ? 'flex' : 'none';
+        
+        // Position menu
+        const x = event.type.includes('touch') ? event.touches[0].clientX : event.clientX;
+        const y = event.type.includes('touch') ? event.touches[0].clientY : event.clientY;
+        
+        menu.style.left = `${x}px`;
+        menu.style.top = `${y}px`;
+        menu.classList.add('active');
+        
+        // Add action handlers
+        menu.querySelectorAll('.context-menu-reactions button').forEach(btn => {
+            btn.onclick = () => {
+                messageFeatures.addReaction(messageId, btn.dataset.reaction);
+                menu.classList.remove('active');
+            };
+        });
+        
+        menu.querySelector('.copy').onclick = () => {
+            navigator.clipboard.writeText(message.text);
+            menu.classList.remove('active');
+        };
+        
+        menu.querySelector('.reply').onclick = () => {
+            startReply(message);
+            menu.classList.remove('active');
+        };
+        
+        menu.querySelector('.forward').onclick = () => {
+            showForwardDialog(message);
+            menu.classList.remove('active');
+        };
+        
+        menu.querySelector('.delete').onclick = () => {
+            deleteMessage(messageId);
+            menu.classList.remove('active');
+        };
+    }
+
+    // Add forward dialog function
+    function showForwardDialog(message) {
+        const contacts = Array.from(document.querySelectorAll('.contact')).map(contact => ({
+            id: contact.dataset.userId,
+            name: contact.querySelector('.contact-name').textContent
+        }));
+        
+        const dialog = document.createElement('div');
+        dialog.className = 'forward-dialog active';
+        dialog.innerHTML = `
+            <div class="forward-dialog-content">
+                <div class="forward-header">
+                    <h3>Forward message</h3>
+                    <button class="close-forward">×</button>
+                </div>
+                <div class="forward-contacts">
+                    ${contacts.map(contact => `
+                        <div class="forward-contact" data-id="${contact.id}">
+                            <span>${contact.name}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(dialog);
+        
+        dialog.querySelector('.close-forward').onclick = () => {
+            dialog.remove();
+        };
+        
+        dialog.querySelectorAll('.forward-contact').forEach(contactEl => {
+            contactEl.onclick = () => {
+                const targetChatId = [currentUser.uid, contactEl.dataset.id].sort().join('_');
+                messageFeatures.forwardMessage(message.id, targetChatId);
+                dialog.remove();
+            };
+        });
+    }
+
+    // Remove storage-dependent features and their references
+    const messageFeatures = {
+        async addReaction(messageId, reaction) {
+            try {
+                const messageRef = db.collection('messages').doc(messageId);
+                await messageRef.update({
+                    [`reactions.${reaction}`]: firebase.firestore.FieldValue.arrayUnion(currentUser.uid)
+                });
+            } catch (error) {
+                console.error('Error adding reaction:', error);
+            }
+        },
+
+        async forwardMessage(messageId, targetChatId) {
+            try {
+                const messageDoc = await db.collection('messages').doc(messageId).get();
+                const messageData = messageDoc.data();
+                
+                await db.collection('messages').add({
+                    ...messageData,
+                    chatId: targetChatId,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    forwardedFrom: messageData.userId,
+                    readBy: [],
+                    readAt: null
+                });
+            } catch (error) {
+                console.error('Error forwarding message:', error);
+            }
+        }
+    };
+
+    // Add link detection and sanitization
+    function processMessageText(text) {
+        // First handle line breaks
+        const withLineBreaks = text.replace(/\n/g, '<br>');
+        
+        // Then handle URLs with protocol required for safety
+        const urlRegex = /(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/g;
+        
+        // Replace URLs with sanitized anchor tags
+        return withLineBreaks.replace(urlRegex, (url) => {
+            try {
+                const sanitizedUrl = new URL(url);
+                // Only allow specific protocols
+                if (!['http:', 'https:'].includes(sanitizedUrl.protocol)) {
+                    return url;
+                }
+                return `<a href="${sanitizedUrl}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+            } catch {
+                return url;
+            }
+        });
+    }
+
+    // Add link preview functionality
+    async function loadLinkPreview(url, messageDiv) {
+        try {
+            // Create and add loading preview container
+            const previewContainer = document.createElement('div');
+            previewContainer.className = 'link-preview loading';
+            messageDiv.querySelector('.message-content').appendChild(previewContainer);
+
+            // Validate URL
+            const validUrl = url.match(/^(http(s)?:\/\/.)[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)$/);
+            if (!validUrl) {
+                previewContainer.remove();
+                return;
+            }
+
+            // Fetch preview data
+            const response = await fetch(`https://api.microlink.io?url=${encodeURIComponent(url)}`);
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                const { title, description, image } = data.data;
+                
+                if (!title && !description && !image) {
+                    previewContainer.remove();
+                    return;
+                }
+
+                previewContainer.innerHTML = `
+                    ${image?.url ? `<img src="${image.url}" alt="Link preview" loading="lazy">` : ''}
+                    <div class="link-preview-content">
+                        ${title ? `<div class="link-preview-title">${title}</div>` : ''}
+                        ${description ? `<div class="link-preview-description">${description}</div>` : ''}
+                        <div class="link-preview-domain">${new URL(url).hostname}</div>
+                    </div>
+                `;
+                previewContainer.classList.remove('loading');
+            } else {
+                previewContainer.remove();
+            }
+        } catch (error) {
+            console.error('Error loading link preview:', error);
+            messageDiv.querySelector('.link-preview')?.remove();
+        }
+    }
+
+    // Fix date comparison function
+    function isSameDay(date1, date2) {
+        if (!date1 || !date2) return false;
+        const d1 = new Date(date1);
+        const d2 = new Date(date2);
+        return d1.getDate() === d2.getDate() && 
+               d1.getMonth() === d2.getMonth() && 
+               d1.getFullYear() === d2.getFullYear();
+    }
+
+    // Add this helper function before displayMessage
+    function isSameTimestamp(date1, date2, threshold = 2) { // 2 minute threshold
+        if (!date1 || !date2) return false;
+        const d1 = new Date(date1);
+        const d2 = new Date(date2);
+        return Math.abs(d1 - d2) / 60000 < threshold; // Convert to minutes
+    }
+
+    // Update the displayMessage function to include message ID and handle context menu
+    async function displayMessage(message, messageId) {
+        const messageDiv = document.createElement('div');
+        messageDiv.id = messageId;
+        messageDiv.className = `message ${message.userId === currentUser.uid ? 'sent' : 'received'}`;
+        messageDiv.draggable = true; // Enable dragging
+        messageDiv.dataset.userId = message.userId; // Add userId for grouping
+        
+        // Format the timestamp
+        const timestamp = message.timestamp?.toDate() || new Date();
+        const timeString = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        // Check previous message for grouping
+        const lastMessage = messageArea.lastElementChild;
+        const shouldGroup = lastMessage?.classList.contains('message') && 
+                           lastMessage?.dataset.userId === message.userId &&
+                           isSameTimestamp(timestamp, new Date(lastMessage.dataset.timestamp));
+        
+        // Add date divider if needed
+        const dateString = timestamp.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+        // Only add date divider if it's a message element and date is different
+        if (!lastMessage || 
+            (lastMessage.classList.contains('message') && 
+             !isSameDay(timestamp, new Date(lastMessage.dataset.date)))) {
+            const divider = document.createElement('div');
+            divider.className = 'date-divider';
+            divider.innerHTML = `<span>${dateString}</span>`;
+            messageArea.appendChild(divider);
+        }
+
+        // Add reply content if this is a reply
+        let replyHtml = '';
+        if (message.replyTo) {
+            const replyClass = message.userId === currentUser.uid ? 'sent' : 'received';
+            replyHtml = `
+                <div class="reply-preview">
+                    <div class="reply-author">
+                        ${message.replyToUser || 'User'}
+                    </div>
+                    <div class="reply-content">
+                        ${message.replyText}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Process message text for links
+        const processedText = processMessageText(message.text);
+
+        // Add swipe reply icon for mobile
+        const swipeReplyIcon = `<i class="ri-reply-line swipe-reply-icon"></i>`;
+
+        // Add message type specific content
+        let messageContent = '';
+        switch (message.type) {
+            case 'file':
+                messageContent = createFilePreview(message);
+                break;
+            case 'voice':
+                messageContent = createVoiceMessage(message);
+                break;
+            default:
+                messageContent = processMessageText(message.text);
+        }
+
+        // Add forwarded indicator if needed
+        const forwardedHtml = message.forwardedFrom ? `
+            <div class="forward-indicator">
+                <i class="ri-share-forward-line"></i>
+                Forwarded
+            </div>
+        ` : '';
+
+        messageDiv.innerHTML = `
+            ${swipeReplyIcon}
+            ${replyHtml}
+            ${forwardedHtml}
+            <div class="message-content">
+                ${messageContent}
+            </div>
+            ${!shouldGroup ? `
+                <div class="message-footer">
+                    <span class="message-timestamp">${timeString}</span>
+                    ${message.userId === currentUser.uid ? `
+                        <div class="read-receipt ${message.readBy?.length ? 'read' : ''}">
+                            <i class="ri-${message.readBy?.length ? 'check-double' : 'check'}-line"></i>
+                        </div>
+                    ` : ''}
+                </div>
+            ` : ''}
+        `;
+        messageDiv.dataset.date = timestamp;
+        messageDiv.dataset.timestamp = timestamp;
+
+        // If this is a grouped message, add grouped class
+        if (shouldGroup) {
+            messageDiv.classList.add('grouped');
+            // Update last message's footer if it exists
+            if (lastMessage) {
+                const footer = lastMessage.querySelector('.message-footer');
+                if (footer) footer.remove();
+            }
+        }
 
         // Lazy load link previews
         const urls = message.text.match(/(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/g);
@@ -1104,14 +1579,56 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Event listeners
-    if (sendButton && messageInput) {
-        sendButton.addEventListener('click', sendMessage);
-        messageInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                sendMessage();
+    // Message Input Setup - Single Source of Truth
+    if (messageInput) {
+        function setupMessageInput() {
+            // Function to handle auto-resize
+            function autoResize() {
+                messageInput.style.height = 'auto';
+                const maxHeight = window.innerWidth <= 768 ? 120 : 150;
+                const newHeight = Math.min(messageInput.scrollHeight, maxHeight);
+                messageInput.style.height = `${newHeight}px`;
+
+                // Adjust message container padding
+                const messages = document.querySelector('.messages');
+                if (messages) {
+                    const bottomPadding = newHeight + 80;
+                    const safeAreaBottom = parseInt(getComputedStyle(document.documentElement)
+                        .getPropertyValue('--safe-area-bottom'), 10) || 0;
+                    messages.style.paddingBottom = `${bottomPadding + safeAreaBottom}px`;
+                }
             }
-        });
+
+            // Input event - handles typing and resize
+            messageInput.addEventListener('input', () => {
+                handleTyping();
+                autoResize();
+            });
+
+            // Enter key handling
+            messageInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    if (e.shiftKey) {
+                        // Let the new line happen naturally
+                        setTimeout(autoResize, 0);
+                    } else {
+                        e.preventDefault();
+                        sendMessage();
+                    }
+                }
+            });
+
+            // Send button handler
+            if (sendButton) {
+                sendButton.addEventListener('click', sendMessage);
+            }
+
+            // Initial resize
+            autoResize();
+        }
+
+        // Initialize message input
+        setupMessageInput();
     }
 
     // Update startChat function to properly handle navigation
@@ -1126,6 +1643,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const userData = otherUser.data();
             const chatId = [currentUser.uid, userId].sort().join('_');
+            currentChats.add(chatId); // Add this line
             
             // Set current chat and load messages
             currentChat = chatId;
@@ -1225,29 +1743,41 @@ document.addEventListener('DOMContentLoaded', function() {
             // Clear existing contacts
             contactsList.innerHTML = '';
 
-            // Get all chats where the current user is a participant
-            const chatsQuery = await db.collection('messages')
-                .where('userId', '==', currentUser.uid)
-                .orderBy('timestamp', 'desc')
-                .get();
-
             const uniqueUsers = new Set();
             
-            // Extract unique user IDs from messages
-            for (const doc of chatsQuery.docs) {
+            // Get chats where user is either sender or receiver
+            const [sentChats, receivedChats] = await Promise.all([
+                // Get chats where user is sender
+                db.collection('messages')
+                    .where('userId', '==', currentUser.uid)
+                    .orderBy('timestamp', 'desc')
+                    .get(),
+                // Get chats where user is a participant
+                db.collection('messages')
+                    .where('chatId', 'array-contains', currentUser.uid)
+                    .orderBy('timestamp', 'desc')
+                    .get()
+            ]);
+
+            // Process sent messages
+            sentChats.docs.forEach(doc => {
                 const message = doc.data();
-                const chatId = message.chatId;
-                
-                // Skip if chatId is missing or invalid
-                if (!chatId || typeof chatId !== 'string') continue;
-                
-                const users = chatId.split('_');
-                // Skip if chat ID format is invalid
-                if (users.length !== 2) continue;
-                
+                if (!message.chatId) return;
+                const users = message.chatId.split('_');
+                if (users.length !== 2) return;
                 const otherUserId = users[0] === currentUser.uid ? users[1] : users[0];
                 if (otherUserId) uniqueUsers.add(otherUserId);
-            }
+            });
+
+            // Process received messages
+            receivedChats.docs.forEach(doc => {
+                const message = doc.data();
+                if (!message.chatId) return;
+                const users = message.chatId.split('_');
+                if (users.length !== 2) return;
+                const otherUserId = users[0] === currentUser.uid ? users[1] : users[0];
+                if (otherUserId) uniqueUsers.add(otherUserId);
+            });
 
             // Show empty state if no conversations
             if (uniqueUsers.size === 0) {
@@ -1257,6 +1787,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Hide empty state if we have conversations
             if (noChats) noChats.style.display = 'none';
+
+            // Update currentChats after getting unique users
+            currentChats = new Set(
+                Array.from(uniqueUsers).map(userId => 
+                    [currentUser.uid, userId].sort().join('_')
+                )
+            );
 
             // Fetch and display user details for each unique contact
             for (const userId of uniqueUsers) {
@@ -1272,6 +1809,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     continue;
                 }
             }
+
+            // Move updateUnreadCounts after currentChats is set
+            await updateUnreadCounts();
         } catch (error) {
             console.error("Error loading recent contacts:", error);
             // Show empty state on error
@@ -1347,13 +1887,76 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Update message input event listeners
-    if (messageInput) {
-        messageInput.addEventListener('input', handleTyping);
-        messageInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                sendMessage();
+    // Add this function after loadRecentContacts
+    async function updateUnreadCounts() {
+        try {
+            unreadCounts.clear();
+            let totalUnread = 0;
+
+            // Only proceed if we have chats to check
+            if (currentChats.size === 0) return;
+
+            // Modify query to avoid multiple inequality filters
+            const snapshot = await db.collection('messages')
+                .where('chatId', 'in', Array.from(currentChats))
+                .where('userId', '!=', currentUser.uid)
+                .get();
+
+            // Filter readBy client-side instead
+            snapshot.docs.forEach(doc => {
+                const message = doc.data();
+                // Check if message is unread
+                if (!message.readBy?.includes(currentUser.uid)) {
+                    const otherUser = message.chatId.split('_').find(id => id !== currentUser.uid);
+                    unreadCounts.set(otherUser, (unreadCounts.get(otherUser) || 0) + 1);
+                    totalUnread++;
+                }
+            });
+
+            // Update UI
+            document.querySelectorAll('.contact').forEach(contact => {
+                const userId = contact.dataset.userId;
+                const count = unreadCounts.get(userId) || 0;
+                let indicator = contact.querySelector('.unread-indicator');
+                
+                if (count > 0) {
+                    if (!indicator) {
+                        indicator = document.createElement('div');
+                        indicator.className = 'unread-indicator';
+                        contact.querySelector('.contact-header').appendChild(indicator);
+                    }
+                    indicator.textContent = count;
+                } else if (indicator) {
+                    indicator.remove();
+                }
+            });
+
+            // Update menu toggle indicator
+            let menuIndicator = menuToggle.querySelector('.unread-indicator');
+            if (totalUnread > 0) {
+                if (!menuIndicator) {
+                    menuIndicator = document.createElement('div');
+                    menuIndicator.className = 'unread-indicator';
+                    menuToggle.appendChild(menuIndicator);
+                }
+            } else if (menuIndicator) {
+                menuIndicator.remove();
             }
-        });
+        } catch (error) {
+            console.error('Error updating unread counts:', error);
+        }
+    }
+
+    // Add real-time updates for unread counts
+    function setupUnreadListener() {
+        if (messageUnsubscribe) {
+            messageUnsubscribe();
+        }
+
+        messageUnsubscribe = db.collection('messages')
+            .where('userId', '!=', currentUser.uid)
+            .onSnapshot(() => {
+                updateUnreadCounts();
+            });
     }
 });

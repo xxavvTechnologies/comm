@@ -141,28 +141,43 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Helper function to upload avatar
 async function uploadUserAvatar(file) {
-    if (!file || !window.storage) return null;
-
-    try {
-        // Validate file size (max 2MB)
-        if (file.size > 2 * 1024 * 1024) {
-            throw new Error('Image too large. Maximum size is 2MB.');
+    return new Promise((resolve, reject) => {
+        if (!file) {
+            reject(new Error('No file selected'));
+            return;
         }
 
-        // Create a storage reference
-        const user = auth.currentUser;
-        const storageRef = storage.ref(`avatars/${user.uid}/${Date.now()}_${file.name}`);
-        
-        // Upload file
-        const snapshot = await storageRef.put(file);
-        
-        // Get download URL
-        const url = await snapshot.ref.getDownloadURL();
-        return url;
-    } catch (error) {
-        console.error('Error uploading avatar:', error);
-        throw new Error('Failed to upload image');
-    }
+        // Validate file size (max 2MB)
+        if (file.size > 2 * 1024 * 1024) {
+            reject(new Error('Image too large. Maximum size is 2MB.'));
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                const base64String = e.target.result;
+                const user = auth.currentUser;
+                
+                // Update user profile with base64 image
+                await db.collection('users').doc(user.uid).update({
+                    photoURL: base64String,
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                // Update auth profile
+                await auth.currentUser.updateProfile({
+                    photoURL: base64String
+                });
+
+                resolve(base64String);
+            } catch (error) {
+                reject(error);
+            }
+        };
+        reader.onerror = (error) => reject(error);
+        reader.readAsDataURL(file);
+    });
 }
 
 // Helper function to update user profile

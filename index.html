@@ -2,85 +2,251 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#000000">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="manifest" href="manifest.json">
     <title>Nova Comm - Login</title>
+    <link rel="icon" type="image/x-icon" href="https://d2zcpib8duehag.cloudfront.net/Nova%20Comm.png">
+    
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    
+    <!-- Styles -->
     <link rel="stylesheet" href="css/style.css">
-    <!-- Firebase SDK -->
+    <link rel="stylesheet" href="css/login.css">
+    
+    <!-- Firebase -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-    <!-- Initialize Firebase first -->
     <script src="js/firebase-config.js"></script>
-    <!-- Then load login logic -->
     <script src="js/login.js"></script>
 </head>
 <body>
-    <div class="login-container">
-        <div class="login-box">
-            <div class="logo">
-                <h1>Nova Comm</h1>
-                <p class="tagline">Connect instantly, chat seamlessly</p>
-            </div>
-            <div class="auth-options">
-                <div class="social-buttons">
-                    <button type="button" class="social-button" id="googleLogin">
-                        <i class="ri-google-fill"></i>
-                        Continue with Google
-                    </button>
-                    <button type="button" class="social-button" id="githubLogin">
-                        <i class="ri-github-fill"></i>
-                        Continue with GitHub
-                    </button>
+    <div class="login-page">
+        <div class="login-container">
+            <div class="login-box">
+                <div class="logo">
+                    <h2>Nova Comm</h2>
+                    <p class="tagline">Connect instantly, chat seamlessly</p>
                 </div>
-                <div class="social-login-divider">
-                    <span>or sign in with email</span>
-                </div>
-                <form id="loginForm" class="login-form">
-                    <div class="input-group">
-                        <div class="input-wrapper">
-                            <i class="ri-mail-line"></i>
-                            <input type="email" id="email" placeholder="Your email" required>
-                        </div>
-                    </div>
-                    <div class="input-group">
-                        <div class="input-wrapper">
-                            <i class="ri-lock-line"></i>
-                            <input type="password" id="password" placeholder="Password" required>
-                        </div>
-                    </div>
-                    <div class="form-actions">
-                        <button type="submit" class="login-button">
-                            <span>Sign In</span>
-                            <i class="ri-arrow-right-line"></i>
+                <div class="auth-options">
+                    <div class="social-buttons">
+                        <button type="button" class="social-button" id="googleLogin">
+                            <i class="ri-google-fill"></i>
+                            <span>Continue with Google</span>
+                        </button>
+                        <button type="button" class="social-button" id="githubLogin">
+                            <i class="ri-github-fill"></i>
+                            <span>Continue with GitHub</span>
                         </button>
                     </div>
-                    <div class="form-footer">
-                        <a href="https://account.nova.xxavvgroup.com/forgot-password" class="forgot-password">
-                            Forgot password?
-                        </a>
+                    <div class="divider">
+                        <span>or</span>
                     </div>
-                </form>
-            </div>
-            <div class="signup-prompt">
-                <p>Don't have an account? <a href="https://account.nova.xxavvgroup.com" class="signup-link">Create one</a></p>
+                    <form id="loginForm" class="login-form">
+                        <div class="form-group">
+                            <div class="input-wrapper">
+                                <i class="ri-mail-line"></i>
+                                <input type="email" id="email" placeholder="Email address" required>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <div class="input-wrapper">
+                                <i class="ri-lock-line"></i>
+                                <input type="password" id="password" placeholder="Password" required>
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <a href="https://account.nova.xxavvgroup.com/forgot-password" class="forgot-link">
+                                Forgot password?
+                            </a>
+                            <button type="submit" class="login-button">
+                                <span>Sign In</span>
+                                <i class="ri-arrow-right-line"></i>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                <div class="signup-prompt">
+                    <p>Don't have an account? <a href="https://account.nova.xxavvgroup.com">Create one</a></p>
+                </div>
             </div>
         </div>
-        <div class="login-footer">
-            <p>&copy;2025 xxavvTechnologies</p>
-            <div class="footer-links">
-                <a href="https://tech.xxavvgroup.com/help-center/xts1-hc004">Terms</a>
-                <a href="https://tech.xxavvgroup.com/help-center/xts1-hc005">Privacy</a>
-                <a href="https://tech.xxavvgroup.com/helpcenter">Help Center</a>
+        <footer class="footer">
+            <div class="footer-content">
+                <p>&copy; 2025 xxavvTechnologies</p>
+                <div class="footer-links">
+                    <a href="https://tech.xxavvgroup.com/help-center/xts1-hc004">Terms</a>
+                    <span class="separator">•</span>
+                    <a href="https://tech.xxavvgroup.com/help-center/xts1-hc005">Privacy</a>
+                    <span class="separator">•</span>
+                    <a href="https://tech.xxavvgroup.com/helpcenter">Help</a>
+                </div>
             </div>
-        </div>
+        </footer>
     </div>
+
+    <style>
+        .login-page {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-gradient);
+        }
+        
+        .login-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+        }
+        
+        .login-box {
+            background: var(--surface-1);
+            border-radius: 1rem;
+            padding: 2rem;
+            width: 100%;
+            max-width: 420px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+        }
+        
+        .logo {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        .logo h1 {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .social-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .social-button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            background: var(--surface-2);
+            border: 1px solid var(--border-color);
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        .divider {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            margin: 1.5rem 0;
+        }
+        
+        .divider::before,
+        .divider::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .divider span {
+            padding: 0 1rem;
+            color: var(--text-2);
+            font-size: 0.875rem;
+        }
+        
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        
+        .input-wrapper {
+            display: flex;
+            align-items: center;
+            background: var(--surface-2);
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            padding: 0.75rem;
+        }
+        
+        .input-wrapper i {
+            color: var(--text-2);
+            margin-right: 0.75rem;
+        }
+        
+        .input-wrapper input {
+            background: none;
+            border: none;
+            width: 100%;
+            outline: none;
+        }
+        
+        .form-actions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 1.5rem;
+        }
+        
+        .login-button {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            background: var(--primary);
+            color: white;
+            border-radius: 0.5rem;
+            font-weight: 500;
+        }
+        
+        .footer {
+            padding: 1.5rem;
+            text-align: center;
+            font-size: 0.875rem;
+        }
+        
+        .footer-content {
+            max-width: 420px;
+            margin: 0 auto;
+        }
+        
+        .footer-links {
+            margin-top: 0.5rem;
+        }
+        
+        .separator {
+            margin: 0 0.5rem;
+            color: var(--text-2);
+        }
+        
+        @media (max-width: 480px) {
+            .login-box {
+                padding: 1.5rem;
+                border-radius: 0.75rem;
+            }
+            
+            .form-actions {
+                flex-direction: column;
+                gap: 1rem;
+                align-items: stretch;
+            }
+            
+            .forgot-link {
+                text-align: center;
+            }
+        }
+    </style>
 </body>
 </html>

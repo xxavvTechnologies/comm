@@ -2,18 +2,42 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <!-- Update PWA meta tags -->
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#000000">
+    <meta name="viewport" content="width=device-width, viewport-fit=cover">
+    <link rel="icon" type="image/x-icon" href="https://d2zcpib8duehag.cloudfront.net/Nova%20Comm.png">
     
-    <!-- Add PWA icons -->
-    <link rel="icon" type="image/png" sizes="192x192" href="img/icons/icon-192.png">
-    <link rel="apple-touch-icon" sizes="192x192" href="img/icons/apple-icon-192.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="img/icons/icon-512.png">
-    <link rel="apple-touch-icon" sizes="512x512" href="img/icons/apple-icon-512.png">
+    <!-- SEO Meta Tags -->
+    <meta name="description" content="Nova Comm - Real-time messaging app for seamless communication. Chat instantly with friends and colleagues.">
+    <meta name="keywords" content="chat app, messaging, real-time chat, instant messaging, Nova Comm">
+    <meta name="author" content="xxavvTechnologies">
+    
+    <!-- PWA Meta Tags -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Nova Comm">
+    <meta name="theme-color" content="#000000">
+    <meta name="application-name" content="Nova Comm">
+    
+    <!-- Social Media Meta Tags -->
+    <meta property="og:title" content="Nova Comm - Instant Messaging">
+    <meta property="og:description" content="Connect instantly and chat seamlessly with Nova Comm's real-time messaging platform.">
+    <meta property="og:image" content="https://comm.nova.xxavvgroup.com/img/social-preview.png">
+    <meta property="og:url" content="https://com.nova.xxavvgroup.com">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:site" content="@xxavvtech">
+    
+    <!-- PWA Icons -->
+    <link rel="icon" type="image/png" sizes="192x192" href="https://d2zcpib8duehag.cloudfront.net/Nova%20Comm.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="https://d2zcpib8duehag.cloudfront.net/Nova%20Comm.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="https://d2zcpib8duehag.cloudfront.net/Nova%20Comm.png">
+    <link rel="apple-touch-icon" sizes="512x512" href="https://d2zcpib8duehag.cloudfront.net/Nova%20Comm.png">
+    
+    <!-- Apple PWA Splash Screens -->
+    <link rel="apple-touch-startup-image" href="img/splash/apple-splash-2048-2732.png" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2)">
+    <link rel="apple-touch-startup-image" href="img/splash/apple-splash-1668-2388.png" media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2)">
+    <link rel="apple-touch-startup-image" href="img/splash/apple-splash-1536-2048.png" media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2)">
+    <link rel="apple-touch-startup-image" href="img/splash/apple-splash-1125-2436.png" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)">
+    <link rel="apple-touch-startup-image" href="img/splash/apple-splash-828-1792.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2)">
 
     <title>Nova Comm - Chat</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -26,9 +50,9 @@
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
-    <!-- Add Firebase Realtime Database SDK after other Firebase scripts -->
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+    <!-- Add Firebase Messaging SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js"></script>
     <script>
         // Allow cookies for Firebase
         document.cookie = "firebase-allow-cookies=1; SameSite=None; Secure";
@@ -127,13 +151,47 @@
             </div>
             <div class="message-input">
                 <div class="message-input-container">
-                    <input type="text" placeholder="Type a message..." disabled>
-                    <button disabled>
+                    <textarea 
+                        placeholder="Type a message..." 
+                        rows="1"
+                        maxlength="2000"
+                        data-min-rows="1"
+                        data-max-rows="6"
+                        disabled
+                    ></textarea>
+                    <button class="send-message" disabled>
                         <i class="ri-send-plane-fill"></i>
                     </button>
                 </div>
             </div>
         </main>
+    </div>
+
+    <!-- Add forward message dialog -->
+    <div class="forward-dialog">
+        <div class="forward-dialog-content">
+            <div class="forward-header">
+                <h3>Forward message</h3>
+                <button class="close-forward">
+                    <i class="ri-close-line"></i>
+                </button>
+            </div>
+            <div class="forward-contacts"></div>
+        </div>
+    </div>
+
+    <!-- Add message search sidebar -->
+    <div class="message-search">
+        <div class="search-header">
+            <button class="close-search">
+                <i class="ri-close-line"></i>
+            </button>
+            <div class="search-input-wrapper">
+                <i class="ri-search-line"></i>
+                <input type="search" placeholder="Search in conversation...">
+            </div>
+        </div>
+        <div class="search-results"></div>
     </div>
 
     <!-- Add loading overlay -->
@@ -146,5 +204,35 @@
         <i class="ri-reply-line"></i>
         <span>Drop to reply</span>
     </div>
+
+    <!-- Update context menu template -->
+    <template id="message-context-menu">
+        <div class="message-context-menu">
+            <div class="context-menu-reactions">
+                <button data-reaction="👍">👍</button>
+                <button data-reaction="❤️">❤️</button>
+                <button data-reaction="😂">😂</button>
+                <button data-reaction="😮">😮</button>
+                <button data-reaction="😢">😢</button>
+                <button data-reaction="🙏">🙏</button>
+            </div>
+            <div class="context-menu-item reply">
+                <i class="ri-reply-line"></i>
+                Reply
+            </div>
+            <div class="context-menu-item forward">
+                <i class="ri-share-forward-line"></i>
+                Forward
+            </div>
+            <div class="context-menu-item copy">
+                <i class="ri-file-copy-line"></i>
+                Copy
+            </div>
+            <div class="context-menu-item delete">
+                <i class="ri-delete-bin-line"></i>
+                Delete
+            </div>
+        </div>
+    </template>
 </body>
 </html>
