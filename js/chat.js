@@ -975,411 +975,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Update showContextMenu function
-    function showContextMenu(event, message, messageId) {
-        const menu = document.querySelector('.message-context-menu');
-        const deleteOption = menu.querySelector('.delete');
-        const forwardOption = menu.querySelector('.forward');
-        
-        // Only show delete for own messages
-        deleteOption.style.display = message.userId === currentUser.uid ? 'flex' : 'none';
-        
-        // Position menu
-        const x = event.type.includes('touch') ? event.touches[0].clientX : event.clientX;
-        const y = event.type.includes('touch') ? event.touches[0].clientY : event.clientY;
-        
-        menu.style.left = `${x}px`;
-        menu.style.top = `${y}px`;
-        menu.classList.add('active');
-        
-        // Add action handlers
-        menu.querySelectorAll('.context-menu-reactions button').forEach(btn => {
-            btn.onclick = () => {
-                messageFeatures.addReaction(messageId, btn.dataset.reaction);
-                menu.classList.remove('active');
-            };
-        });
-        
-        menu.querySelector('.copy').onclick = () => {
-            navigator.clipboard.writeText(message.text);
-            menu.classList.remove('active');
-        };
-        
-        menu.querySelector('.reply').onclick = () => {
-            startReply(message);
-            menu.classList.remove('active');
-        };
-        
-        menu.querySelector('.forward').onclick = () => {
-            showForwardDialog(message);
-            menu.classList.remove('active');
-        };
-        
-        menu.querySelector('.delete').onclick = () => {
-            deleteMessage(messageId);
-            menu.classList.remove('active');
-        };
-    }
-
-    // Add forward dialog function
-    function showForwardDialog(message) {
-        const contacts = Array.from(document.querySelectorAll('.contact')).map(contact => ({
-            id: contact.dataset.userId,
-            name: contact.querySelector('.contact-name').textContent
-        }));
-        
-        const dialog = document.createElement('div');
-        dialog.className = 'forward-dialog active';
-        dialog.innerHTML = `
-            <div class="forward-dialog-content">
-                <div class="forward-header">
-                    <h3>Forward message</h3>
-                    <button class="close-forward">×</button>
-                </div>
-                <div class="forward-contacts">
-                    ${contacts.map(contact => `
-                        <div class="forward-contact" data-id="${contact.id}">
-                            <span>${contact.name}</span>
-                        </div>
-                    `).join('')}
-                </div>
-            </div>
-        `;
-        
-        document.body.appendChild(dialog);
-        
-        dialog.querySelector('.close-forward').onclick = () => {
-            dialog.remove();
-        };
-        
-        dialog.querySelectorAll('.forward-contact').forEach(contactEl => {
-            contactEl.onclick = () => {
-                const targetChatId = [currentUser.uid, contactEl.dataset.id].sort().join('_');
-                messageFeatures.forwardMessage(message.id, targetChatId);
-                dialog.remove();
-            };
-        });
-    }
-
-    // Remove storage-dependent features and their references
-    const messageFeatures = {
-        async addReaction(messageId, reaction) {
-            try {
-                const messageRef = db.collection('messages').doc(messageId);
-                await messageRef.update({
-                    [`reactions.${reaction}`]: firebase.firestore.FieldValue.arrayUnion(currentUser.uid)
-                });
-            } catch (error) {
-                console.error('Error adding reaction:', error);
-            }
-        },
-
-        async forwardMessage(messageId, targetChatId) {
-            try {
-                const messageDoc = await db.collection('messages').doc(messageId).get();
-                const messageData = messageDoc.data();
-                
-                await db.collection('messages').add({
-                    ...messageData,
-                    chatId: targetChatId,
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                    forwardedFrom: messageData.userId,
-                    readBy: [],
-                    readAt: null
-                });
-            } catch (error) {
-                console.error('Error forwarding message:', error);
-            }
-        }
-    };
-
-    // Add link detection and sanitization
-    function processMessageText(text) {
-        // First handle line breaks
-        const withLineBreaks = text.replace(/\n/g, '<br>');
-        
-        // Then handle URLs with protocol required for safety
-        const urlRegex = /(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/g;
-        
-        // Replace URLs with sanitized anchor tags
-        return withLineBreaks.replace(urlRegex, (url) => {
-            try {
-                const sanitizedUrl = new URL(url);
-                // Only allow specific protocols
-                if (!['http:', 'https:'].includes(sanitizedUrl.protocol)) {
-                    return url;
-                }
-                return `<a href="${sanitizedUrl}" target="_blank" rel="noopener noreferrer">${url}</a>`;
-            } catch {
-                return url;
-            }
-        });
-    }
-
-    // Add link preview functionality
-    async function loadLinkPreview(url, messageDiv) {
-        try {
-            // Create and add loading preview container
-            const previewContainer = document.createElement('div');
-            previewContainer.className = 'link-preview loading';
-            messageDiv.querySelector('.message-content').appendChild(previewContainer);
-
-            // Validate URL
-            const validUrl = url.match(/^(http(s)?:\/\/.)[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)$/);
-            if (!validUrl) {
-                previewContainer.remove();
-                return;
-            }
-
-            // Fetch preview data
-            const response = await fetch(`https://api.microlink.io?url=${encodeURIComponent(url)}`);
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                const { title, description, image } = data.data;
-                
-                if (!title && !description && !image) {
-                    previewContainer.remove();
-                    return;
-                }
-
-                previewContainer.innerHTML = `
-                    ${image?.url ? `<img src="${image.url}" alt="Link preview" loading="lazy">` : ''}
-                    <div class="link-preview-content">
-                        ${title ? `<div class="link-preview-title">${title}</div>` : ''}
-                        ${description ? `<div class="link-preview-description">${description}</div>` : ''}
-                        <div class="link-preview-domain">${new URL(url).hostname}</div>
-                    </div>
-                `;
-                previewContainer.classList.remove('loading');
-            } else {
-                previewContainer.remove();
-            }
-        } catch (error) {
-            console.error('Error loading link preview:', error);
-            messageDiv.querySelector('.link-preview')?.remove();
-        }
-    }
-
-    // Fix date comparison function
-    function isSameDay(date1, date2) {
-        if (!date1 || !date2) return false;
-        const d1 = new Date(date1);
-        const d2 = new Date(date2);
-        return d1.getDate() === d2.getDate() && 
-               d1.getMonth() === d2.getMonth() && 
-               d1.getFullYear() === d2.getFullYear();
-    }
-
-    // Add this helper function before displayMessage
-    function isSameTimestamp(date1, date2, threshold = 2) { // 2 minute threshold
-        if (!date1 || !date2) return false;
-        const d1 = new Date(date1);
-        const d2 = new Date(date2);
-        return Math.abs(d1 - d2) / 60000 < threshold; // Convert to minutes
-    }
-
-    // Update the displayMessage function to include message ID and handle context menu
-    async function displayMessage(message, messageId) {
-        const messageDiv = document.createElement('div');
-        messageDiv.id = messageId;
-        messageDiv.className = `message ${message.userId === currentUser.uid ? 'sent' : 'received'}`;
-        messageDiv.draggable = true; // Enable dragging
-        messageDiv.dataset.userId = message.userId; // Add userId for grouping
-        
-        // Format the timestamp
-        const timestamp = message.timestamp?.toDate() || new Date();
-        const timeString = timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        
-        // Check previous message for grouping
-        const lastMessage = messageArea.lastElementChild;
-        const shouldGroup = lastMessage?.classList.contains('message') && 
-                           lastMessage?.dataset.userId === message.userId &&
-                           isSameTimestamp(timestamp, new Date(lastMessage.dataset.timestamp));
-        
-        // Add date divider if needed
-        const dateString = timestamp.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
-        // Only add date divider if it's a message element and date is different
-        if (!lastMessage || 
-            (lastMessage.classList.contains('message') && 
-             !isSameDay(timestamp, new Date(lastMessage.dataset.date)))) {
-            const divider = document.createElement('div');
-            divider.className = 'date-divider';
-            divider.innerHTML = `<span>${dateString}</span>`;
-            messageArea.appendChild(divider);
-        }
-
-        // Add reply content if this is a reply
-        let replyHtml = '';
-        if (message.replyTo) {
-            const replyClass = message.userId === currentUser.uid ? 'sent' : 'received';
-            replyHtml = `
-                <div class="reply-preview">
-                    <div class="reply-author">
-                        ${message.replyToUser || 'User'}
-                    </div>
-                    <div class="reply-content">
-                        ${message.replyText}
-                    </div>
-                </div>
-            `;
-        }
-
-        // Process message text for links
-        const processedText = processMessageText(message.text);
-
-        // Add swipe reply icon for mobile
-        const swipeReplyIcon = `<i class="ri-reply-line swipe-reply-icon"></i>`;
-
-        // Add message type specific content
-        let messageContent = '';
-        switch (message.type) {
-            case 'file':
-                messageContent = createFilePreview(message);
-                break;
-            case 'voice':
-                messageContent = createVoiceMessage(message);
-                break;
-            default:
-                messageContent = processMessageText(message.text);
-        }
-
-        // Add forwarded indicator if needed
-        const forwardedHtml = message.forwardedFrom ? `
-            <div class="forward-indicator">
-                <i class="ri-share-forward-line"></i>
-                Forwarded
-            </div>
-        ` : '';
-
-        messageDiv.innerHTML = `
-            ${swipeReplyIcon}
-            ${replyHtml}
-            ${forwardedHtml}
-            <div class="message-content">
-                ${messageContent}
-            </div>
-            ${!shouldGroup ? `
-                <div class="message-footer">
-                    <span class="message-timestamp">${timeString}</span>
-                    ${message.userId === currentUser.uid ? `
-                        <div class="read-receipt ${message.readBy?.length ? 'read' : ''}">
-                            <i class="ri-${message.readBy?.length ? 'check-double' : 'check'}-line"></i>
-                        </div>
-                    ` : ''}
-                </div>
-            ` : ''}
-        `;
-        messageDiv.dataset.date = timestamp;
-        messageDiv.dataset.timestamp = timestamp;
-
-        // If this is a grouped message, add grouped class
-        if (shouldGroup) {
-            messageDiv.classList.add('grouped');
-            // Update last message's footer if it exists
-            if (lastMessage) {
-                const footer = lastMessage.querySelector('.message-footer');
-                if (footer) footer.remove();
-            }
-        }
-
-        // Lazy load link previews
-        const urls = message.text.match(/(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/g);
-        if (urls) {
-            setTimeout(() => loadLinkPreview(urls[0], messageDiv), 100);
-        }
-
-        // Add context menu handlers
-        let longPressTimer;
-        let touchStartEvent;
-        
-        messageDiv.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            showContextMenu(e, message, messageId);
-        });
-
-        messageDiv.addEventListener('touchstart', (e) => {
-            touchStartEvent = e;
-            longPressTimer = setTimeout(() => {
-                showContextMenu(touchStartEvent, message, messageId);
-            }, 500);
-        });
-
-        messageDiv.addEventListener('touchmove', () => {
-            clearTimeout(longPressTimer);
-        });
-
-        messageDiv.addEventListener('touchend', () => {
-            clearTimeout(longPressTimer);
-        });
-
-        // Add drag and touch event listeners
-        setupDragToReply(messageDiv, message);
-        setupSwipeToReply(messageDiv, message);
-
-        messageArea.appendChild(messageDiv);
-    }
-
-    // Add drag-to-reply functionality
-    function setupDragToReply(messageEl, message) {
-        const dragIndicator = document.querySelector('.drag-reply-indicator');
-
-        messageEl.addEventListener('dragstart', (e) => {
-            messageEl.classList.add('dragging');
-            dragIndicator.classList.add('active');
-            e.dataTransfer.setData('messageId', message.id);
-        });
-
-        messageEl.addEventListener('dragend', () => {
-            messageEl.classList.remove('dragging');
-            dragIndicator.classList.remove('active');
-        });
-
-        // Handle dropping on input area
-        document.querySelector('.message-input').addEventListener('dragover', (e) => {
-            e.preventDefault();
-        });
-
-        document.querySelector('.message-input').addEventListener('drop', (e) => {
-            e.preventDefault();
-            const messageId = e.dataTransfer.getData('messageId');
-            if (messageId) {
-                startReply(message);
-            }
-        });
-    }
-
-    // Update setupSwipeToReply function with proper event handling
-    function setupSwipeToReply(messageEl, message) {
-        let touchStartX = 0;
-        let touchMoveX = 0;
-
-        messageEl.addEventListener('touchstart', (e) => {
-            touchStartX = e.touches[0].clientX;
-        });
-
-        messageEl.addEventListener('touchmove', (e) => {
-            touchMoveX = e.touches[0].clientX;
-            const swipeDistance = touchMoveX - touchStartX;
-            
-            if (swipeDistance > 0 && swipeDistance < 100) {
-                messageEl.classList.add('swiping');
-                messageEl.style.transform = `translateX(${swipeDistance}px)`;
-            }
-        });
-
-        messageEl.addEventListener('touchend', (e) => {
-            const swipeDistance = touchMoveX - touchStartX;
-            messageEl.style.transform = '';
-            messageEl.classList.remove('swiping');
-            
-            if (swipeDistance > 50) {
-                startReply(message);
-            }
-        });
-    }
-
-    // Show context menu
+    // Update showContextMenu function to remove forward option
     function showContextMenu(event, message, messageId) {
         const menu = document.querySelector('.message-context-menu');
         const deleteOption = menu.querySelector('.delete');
@@ -1958,5 +1554,36 @@ document.addEventListener('DOMContentLoaded', function() {
             .onSnapshot(() => {
                 updateUnreadCounts();
             });
+    }
+
+    // Add modal management functions
+    function openModal(modalElement) {
+        document.body.classList.add('modal-open');
+        modalElement.classList.add('active');
+    }
+
+    function closeModal(modalElement) {
+        document.body.classList.remove('modal-open');
+        modalElement.classList.remove('active');
+    }
+
+    // Update search pane handlers
+    if (newChatBtn) {
+        newChatBtn.addEventListener('click', () => {
+            if (searchPane) {
+                openModal(searchPane);
+                userSearchInput?.focus();
+            }
+        });
+    }
+
+    if (closeSearchBtn) {
+        closeSearchBtn.addEventListener('click', () => {
+            if (searchPane) {
+                closeModal(searchPane);
+                userSearchInput.value = '';
+                searchResults.innerHTML = '';
+            }
+        });
     }
 });

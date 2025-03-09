@@ -130,7 +130,7 @@
 .no-chats i {
     font-size: 3rem;
     margin-bottom: 1rem;
-    color: var(--primary-color);
+    color: var (--primary-color);
 }
 
 .start-chat-btn {
@@ -995,4 +995,118 @@
 
 .avatar-upload {
     position: relative;
+}
+
+/* Modal Base Styles */
+.modal-base {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.5);
+    display: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.modal-base.active {
+    display: flex;
+    opacity: 1;
+}
+
+/* Forward Dialog Styles */
+.forward-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 1rem;
+}
+
+.forward-contacts {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.forward-contact {
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    cursor: pointer;
+    border-radius: var(--border-radius);
+    transition: background 0.2s ease;
+}
+
+.forward-contact:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+/* Search Results Styles */
+.search-results {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 1rem;
+    background: var(--background-color);
+}
+
+.search-result-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    cursor: pointer;
+    border-radius: var(--border-radius);
+    transition: all 0.2s ease;
+}
+
+.search-result-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.search-instructions {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 2rem;
+}
+
+/* Message Search Styles */
+.message-search {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    background: var(--background-color);
+    z-index: 80;
+    transform: translateX(100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.message-search.active {
+    transform: translateX(0);
+}
+
+@media (min-width: 768px) {
+    .message-search {
+        width: 320px;
+        border-left: 1px solid rgba(255, 255, 255, 0.1);
+    }
+}
+
+/* Reduce backdrop blur on mobile */
+@media (max-width: 767px) {
+    .search-pane,
+    .message-search,
+    .contacts-header,
+    .chat-header {
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+    }
 }

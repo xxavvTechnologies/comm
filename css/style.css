@@ -1,8 +1,10 @@
+/* Root imports */
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 @import 'styleb.css';
 @import 'stylec.css';
 @import 'styled.css';
 
+/* Base variables and resets */
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
 /* Prevent blurry scaling */
@@ -13,12 +15,32 @@ html {
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    font-size: 16px; /* Force base font size */
 }
 
 /* Force pixel snapping */
 * {
     transform-style: preserve-3d;
     backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    -webkit-transform: translateZ(0);
+    transform: translateZ(0);
+}
+
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    * {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+}
+
+/* Force 100% zoom on mobile */
+@media screen and (max-width: 768px) {
+    html, body {
+        zoom: 1 !important;
+        -ms-zoom: 1 !important;
+        -webkit-zoom: 1 !important;
+    }
 }
 
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');

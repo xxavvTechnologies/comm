@@ -279,3 +279,43 @@ input:checked + .toggle-slider:before {
         gap: 1rem;
     }
 }
+
+/* Dark Theme Overrides */
+.forward-dialog-content {
+    background: var(--secondary-background);
+}
+
+.search-pane,
+.message-search {
+    background: var(--secondary-background);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+/* Animation Keyframes */
+@keyframes slideUp {
+    from {
+        transform: translateY(100%);
+    }
+    to {
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/* Apply animations */
+.forward-dialog.active {
+    animation: fadeIn 0.3s ease;
+}
+
+.forward-dialog.active .forward-dialog-content {
+    animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}

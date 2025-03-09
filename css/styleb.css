@@ -65,12 +65,14 @@
     position: fixed;
     inset: 0;
     background: var(--background-color);
-    z-index: 100;
+    z-index: 60;
     transform: translateY(100%);
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     display: none;
     flex-direction: column;
     padding-top: env(safe-area-inset-top);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .search-pane.active {
@@ -503,4 +505,78 @@
     padding-bottom: max(1rem, env(safe-area-inset-bottom));
     background: var(--secondary-background);
     z-index: 11;
+}
+
+/* Mobile-first layout */
+.app-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    position: relative;
+    overflow: hidden;
+}
+
+/* Contacts Sidebar Mobile Styles */
+.contacts-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 100%;
+    background: var(--background-color);
+    z-index: 50;
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.contacts-sidebar.active {
+    transform: translateX(0);
+}
+
+/* Search Pane Mobile Styles */
+.search-pane {
+    position: fixed;
+    inset: 0;
+    background: var(--background-color);
+    z-index: 60;
+    display: none;
+    flex-direction: column;
+    padding-top: env(safe-area-inset-top);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.search-pane.active {
+    display: flex;
+}
+
+/* Desktop Styles */
+@media (min-width: 768px) {
+    .app-container {
+        flex-direction: row;
+    }
+
+    .contacts-sidebar {
+        position: relative;
+        transform: none;
+        width: 320px;
+        border-right: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .search-pane {
+        position: absolute;
+        height: auto;
+        max-height: 400px;
+        top: 80px;
+        right: 20px;
+        left: auto;
+        bottom: auto;
+        width: 320px;
+        border-radius: var(--border-radius);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        backdrop-filter: blur(8px);
+    }
 }
