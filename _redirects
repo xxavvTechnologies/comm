@@ -1,0 +1,7 @@
+/* /index.html 200
+
+# Force HTTPS
+http://* https://:splat 301!
+
+# Redirect default Netlify subdomain to primary domain
+https://novacomm.netlify.app/* https://comm.novasuite.one/:splat 301!

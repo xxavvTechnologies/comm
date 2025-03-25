@@ -3,12 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <link rel="canonical" href="https://comm.novasuite.one/chat">
     <link rel="icon" type="image/x-icon" href="https://d2zcpib8duehag.cloudfront.net/Nova%20Comm.png">
     
     <!-- SEO Meta Tags -->
-    <meta name="description" content="Nova Comm - Real-time messaging app for seamless communication. Chat instantly with friends and colleagues.">
-    <meta name="keywords" content="chat app, messaging, real-time chat, instant messaging, Nova Comm">
+    <meta name="description" content="Nova Comm - Your secure and real-time chat platform. Experience seamless messaging, voice messages, and file sharing in one place. Join Nova Suite's communication platform today.">
+    <meta name="keywords" content="nova comm, messaging app, real-time chat, secure messaging, nova suite, instant messaging, voice messages, file sharing">
     <meta name="author" content="xxavvTechnologies">
+    <meta name="robots" content="index, follow">
+    
+    <!-- Open Graph / Social Media Meta Tags -->
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Nova Comm">
+    <meta property="og:title" content="Nova Comm - Secure Real-time Messaging">
+    <meta property="og:description" content="Experience seamless and secure messaging with Nova Comm. Part of the Nova Suite ecosystem.">
+    <meta property="og:image" content="https://d2zcpib8duehag.cloudfront.net/Nova%20Comm.png">
+    <meta property="og:url" content="https://comm.novasuite.one">
+    
+    <!-- Twitter Card Meta Tags -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:site" content="@NovaComm">
+    <meta name="twitter:creator" content="@NovaSuite">
+    <meta name="twitter:title" content="Nova Comm - Secure Real-time Messaging">
+    <meta name="twitter:description" content="Experience seamless and secure messaging with Nova Comm. Part of the Nova Suite ecosystem.">
+    <meta name="twitter:image" content="https://d2zcpib8duehag.cloudfront.net/Nova%20Comm.png">
     
     <!-- PWA Meta Tags -->
     <meta name="mobile-web-app-capable" content="yes">
@@ -21,7 +39,7 @@
     <!-- Social Media Meta Tags -->
     <meta property="og:title" content="Nova Comm - Instant Messaging">
     <meta property="og:description" content="Connect instantly and chat seamlessly with Nova Comm's real-time messaging platform.">
-    <meta property="og:image" content="https://comm.nova.xxavvgroup.com/img/social-preview.png">
+    <meta property="og:image" content="https://d2zcpib8duehag.cloudfront.net/Nova%20Comm.png">
     <meta property="og:url" content="https://com.nova.xxavvgroup.com">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:site" content="@xxavvtech">
@@ -80,15 +98,19 @@
                     </div>
                 </div>
                 <button class="new-chat-btn" id="newChatBtn">
-                    <i class="ri-add-line"></i>
-                    <span>New Chat</span>
+                    <div class="btn-content">
+                        <i class="ri-add-line"></i>
+                        <span>New Chat</span>
+                    </div>
+                    <span class="key-hint">⌘N</span>
                 </button>
             </div>
             <div class="contacts-search">
-                <div class="search-input-wrapper">
+                <button class="spotlight-search-btn" id="spotlightSearchBtn">
                     <i class="ri-search-line"></i>
-                    <input type="search" placeholder="Search conversations..." aria-label="Search conversations">
-                </div>
+                    <span>Search...</span>
+                    <span class="key-hint">⌘K</span>
+                </button>
             </div>
             <div class="contacts-list">
                 <div class="no-chats">
@@ -207,5 +229,33 @@
             </div>
         </div>
     </template>
+
+    <!-- Add reaction template -->
+    <template id="reaction-menu">
+        <div class="reaction-menu">
+            <button data-reaction="👍">👍</button>
+            <button data-reaction="❤️">❤️</button>
+            <button data-reaction="😂">😂</button>
+            <button data-reaction="😮">😮</button>
+            <button data-reaction="😢">😢</button>
+            <button data-reaction="👏">👏</button>
+        </div>
+    </template>
+
+    <div class="global-search" id="globalSearch">
+        <div class="search-container">
+            <input 
+                type="search" 
+                class="search-input" 
+                placeholder="Search messages, contacts, or use commands... (⌘K)"
+                id="globalSearchInput"
+                autocomplete="off"
+                spellcheck="false"
+            >
+            <div class="search-results">
+                <!-- Results will be populated dynamically -->
+            </div>
+        </div>
+    </div>
 </body>
 </html>

@@ -75,3 +75,51 @@ self.addEventListener('push', event => {
         self.registration.showNotification('Nova Comm', options)
     );
 });
+
+// Handle background sync for messages
+self.addEventListener('sync', event => {
+    if (event.tag === 'sync-messages') {
+        event.waitUntil(syncMessages());
+    }
+});
+
+// Queue for pending messages
+let messageQueue = [];
+
+// Listen for messages to queue
+self.addEventListener('message', event => {
+    if (event.data.type === 'queue-message') {
+        messageQueue.push(event.data.message);
+        // Attempt immediate sync
+        self.registration.sync.register('sync-messages');
+    }
+});
+
+async function syncMessages() {
+    while (messageQueue.length > 0) {
+        const message = messageQueue[0];
+        try {
+            const response = await fetch('/api/messages', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(message)
+            });
+
+            if (response.ok) {
+                // Remove synced message from queue
+                messageQueue.shift();
+                
+                // Show notification for delivered message
+                self.registration.showNotification('Message Delivered', {
+                    body: 'Your message has been sent successfully',
+                    icon: '/img/icons/icon-192.png',
+                    tag: 'message-sync'
+                });
+            }
+        } catch (error) {
+            console.error('Sync failed:', error);
+            // Leave message in queue for next sync attempt
+            break;
+        }
+    }
+}

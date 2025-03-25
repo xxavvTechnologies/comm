@@ -322,33 +322,41 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Add typing handler
+    // Update typing handler to use debounce and queue
     function handleTyping() {
         if (!currentChat || !typingRef || !currentUser) return;
         
-        // Set typing status
-        typingRef.set({
-            [`${currentUser.uid}`]: {
-                typing: true,
-                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        const setTypingStatus = debounce(async () => {
+            try {
+                await typingRef.set({
+                    [currentUser.uid]: {
+                        typing: true,
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    }
+                }, { merge: true });
+            } catch (error) {
+                console.error('Error updating typing status:', error);
             }
-        }, { merge: true });
+        }, 300);
 
-        // Show self typing indicator
-        updateSelfTypingIndicator(true);
-
+        setTypingStatus();
+        
         // Clear previous timeout
         clearTimeout(typingTimeout);
 
         // Stop typing after 1.5 seconds of no input
-        typingTimeout = setTimeout(() => {
+        typingTimeout = setTimeout(async () => {
             if (typingRef && currentUser) {
-                typingRef.set({
-                    [`${currentUser.uid}`]: {
-                        typing: false,
-                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                    }
-                }, { merge: true });
+                try {
+                    await typingRef.set({
+                        [currentUser.uid]: {
+                            typing: false,
+                            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                        }
+                    }, { merge: true });
+                } catch (error) {
+                    console.error('Error updating typing status:', error);
+                }
             }
             
             // Hide self typing indicator
@@ -510,6 +518,7 @@ document.addEventListener('DOMContentLoaded', function() {
             setupUnreadListener();
             // Don't load messages until a chat is selected
             loadRecentContacts();
+            initializeGlobalSearch();
         } else {
             window.location.href = 'index.html';
         }
@@ -775,11 +784,32 @@ document.addEventListener('DOMContentLoaded', function() {
         return Math.abs(d1 - d2) / 60000 < threshold; // Convert to minutes
     }
 
+    // Add after processMessageText function
+    function replayEffect(messageDiv, effect) {
+        messageDiv.style.animation = 'none';
+        messageDiv.offsetHeight; // Trigger reflow
+        messageDiv.classList.remove(`effect-${effect}`);
+        void messageDiv.offsetHeight; // Trigger reflow
+        messageDiv.classList.add(`effect-${effect}`);
+    }
+
+    // Add new helper for markdown parsing
+    function parseMarkdown(text) {
+        return text
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')  // Bold
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')             // Italic
+            .replace(/`(.*?)`/g, '<code>$1</code>')           // Code
+            .replace(/~~(.*?)~~/g, '<del>$1</del>');          // Strikethrough
+    }
+
     // Update the displayMessage function to include message ID and handle context menu
     async function displayMessage(message, messageId) {
         const messageDiv = document.createElement('div');
         messageDiv.id = messageId;
         messageDiv.className = `message ${message.userId === currentUser.uid ? 'sent' : 'received'}`;
+        if (message.effect) {
+            messageDiv.classList.add(`effect-${message.effect}`);
+        }
         messageDiv.draggable = true; // Enable dragging
         messageDiv.dataset.userId = message.userId; // Add userId for grouping
         
@@ -837,7 +867,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 messageContent = createVoiceMessage(message);
                 break;
             default:
-                messageContent = processMessageText(message.text);
+                messageContent = parseMarkdown(processMessageText(message.text)); // Add markdown parsing
         }
 
         // Add forwarded indicator if needed
@@ -854,6 +884,11 @@ document.addEventListener('DOMContentLoaded', function() {
             ${forwardedHtml}
             <div class="message-content">
                 ${messageContent}
+                ${message.effect ? `
+                    <button class="replay-effect" onclick="event.stopPropagation();">
+                        <i class="ri-restart-line"></i>
+                    </button>
+                ` : ''}
             </div>
             ${!shouldGroup ? `
                 <div class="message-footer">
@@ -914,6 +949,13 @@ document.addEventListener('DOMContentLoaded', function() {
         setupSwipeToReply(messageDiv, message);
 
         messageArea.appendChild(messageDiv);
+
+        if (message.effect) {
+            const replayBtn = messageDiv.querySelector('.replay-effect');
+            replayBtn.addEventListener('click', () => {
+                replayEffect(messageDiv, message.effect);
+            });
+        }
     }
 
     // Add drag-to-reply functionality
@@ -1052,8 +1094,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Update sendMessage to include reply data
-    async function sendMessage() {
+    // Update sendMessage to include effects
+    async function sendMessage(effect = null) {
         const message = messageInput.value.trim();
         if (!message || !currentChat) return;
 
@@ -1067,7 +1109,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 timestamp: firebase.firestore.FieldValue.serverTimestamp(),
                 userEmail: currentUser.email,
                 readBy: [], // Add empty readBy array
-                readAt: null // Add readAt field
+                readAt: null, // Add readAt field
+                effect: effect // Add effect to message data
             };
 
             // Only add reply data if there is a reply
@@ -1077,7 +1120,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 messageData.replyToUser = replyingTo.author || 'User';
             }
 
-            await db.collection('messages').add(messageData);
+            try {
+                // Try immediate send
+                await db.collection('messages').add(messageData);
+            } catch (error) {
+                // If offline, queue for background sync
+                if ('serviceWorker' in navigator && 'SyncManager' in window) {
+                    const sw = await navigator.serviceWorker.ready;
+                    // Queue message for sync
+                    sw.active.postMessage({
+                        type: 'queue-message',
+                        message: messageData
+                    });
+                    // Register for background sync
+                    await sw.sync.register('sync-messages');
+                } else {
+                    throw error; // Re-throw if no sync available
+                }
+            }
             cancelReply(); // Clear reply state after sending
         } catch (error) {
             console.error("Error sending message:", error);
@@ -1112,67 +1172,190 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Setup push notifications
+    // Replace Firebase Cloud Functions with local notification system
     async function setupMessaging() {
         try {
-            // Check for service worker support
-            if (!('serviceWorker' in navigator)) {
-                console.log('Service Worker is not supported');
+            // Check device/browser support
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+            const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+            
+            if (isIOS && !window.navigator.standalone) {
+                // Show prompt to add to home screen for iOS PWA
+                showIOSInstallPrompt();
                 return;
             }
-
-            // Register service worker first
-            const registration = await navigator.serviceWorker.register('firebase-messaging-sw.js', {
-                scope: '/'
-            });
-            
-            // Wait for the service worker to be ready
-            await navigator.serviceWorker.ready;
 
             if (!('Notification' in window)) {
                 console.log('This browser does not support notifications');
                 return;
             }
 
-            const permission = await Notification.requestPermission();
+            // Request permission and register service worker
+            let permission = Notification.permission;
+            
+            if (permission === 'default') {
+                permission = await Notification.requestPermission();
+            }
+
             if (permission !== 'granted') {
-                console.log('Notification permission not granted');
+                console.log('Notification permission denied');
                 return;
             }
 
-            if (!window.messaging) {
+            // Register service worker
+            const registration = await navigator.serviceWorker.register('/js/notifications-worker.js', {
+                scope: '/'
+            });
+
+            await navigator.serviceWorker.ready;
+
+            // Get FCM token
+            const messaging = window.messaging;
+            if (!messaging) {
                 console.error('Firebase messaging not initialized');
                 return;
             }
 
-            // Get token only if we have messaging and permission
-            const token = await window.messaging.getToken({
+            const token = await messaging.getToken({
                 vapidKey: "BIYJYMvPjag4l00oGUWRfFe5AVRHmgu0MBUs7_mCV1V2siT1U6_LpUj1aVqVd6bUdBAp6FbzWhjpY8JpyfetqPM",
                 serviceWorkerRegistration: registration
             });
 
             if (token && currentUser) {
+                // Save token to user profile
                 await db.collection('users').doc(currentUser.uid).set({
-                    email: currentUser.email,
-                    displayName: currentUser.displayName || currentUser.email,
-                    photoURL: currentUser.photoURL,
-                    notificationToken: token,
-                    lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+                    notificationTokens: firebase.firestore.FieldValue.arrayUnion({
+                        token,
+                        device: getDeviceInfo(),
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    })
                 }, { merge: true });
             }
 
             // Handle foreground messages
             messaging.onMessage((payload) => {
-                console.log('Received foreground message:', payload);
-                // Add your notification display logic here
+                if (!document.hidden && currentChat === payload.data.chatId) {
+                    // Don't show notification if chat is open and visible
+                    return;
+                }
+
+                // Show custom notification for foreground messages
+                const notification = new Notification(payload.notification.title, {
+                    body: payload.notification.body,
+                    icon: '/img/icons/icon-192.png',
+                    tag: payload.data.messageId,
+                    data: payload.data,
+                    requireInteraction: true
+                });
+
+                notification.onclick = () => {
+                    window.focus();
+                    if (payload.data.chatId) {
+                        startChat(payload.data.chatId);
+                    }
+                };
             });
 
+            // Set up message listener in Firestore
+            db.collection('messages')
+                .where('timestamp', '>', firebase.firestore.Timestamp.now())
+                .onSnapshot(snapshot => {
+                    snapshot.docChanges().forEach(change => {
+                        if (change.type === 'added') {
+                            const message = change.doc.data();
+                            
+                            // Only show notification if message is for current user
+                            // and chat is not active/visible
+                            if (message.chatId.includes(currentUser.uid) && 
+                                message.userId !== currentUser.uid && 
+                                (!document.hasFocus() || currentChat !== message.chatId)) {
+                                
+                                showLocalNotification(message);
+                            }
+                        }
+                    });
+                });
+
         } catch (error) {
-            console.error("Error setting up notifications:", error);
-            if (error.name === 'AbortError') {
-                console.log('Service Worker registration failed. Notifications will not work.');
-            }
+            console.error('Error setting up notifications:', error);
         }
+    }
+
+    async function showLocalNotification(message) {
+        try {
+            const otherUserId = message.chatId.split('_').find(id => id !== currentUser.uid);
+            const senderDoc = await db.collection('users').doc(message.userId).get();
+            const senderData = senderDoc.data();
+
+            const notification = new Notification(senderData.displayName || 'New Message', {
+                body: message.text,
+                icon: senderData.photoURL || '/img/icons/icon-192.png',
+                tag: message.chatId,
+                data: {
+                    messageId: message.id,
+                    chatId: message.chatId
+                },
+                requireInteraction: true
+            });
+
+            notification.onclick = function() {
+                window.focus();
+                startChat(otherUserId);
+            };
+
+        } catch (error) {
+            console.error('Error showing notification:', error);
+        }
+    }
+
+    function getDeviceInfo() {
+        const ua = navigator.userAgent;
+        const platform = navigator.platform;
+        
+        return {
+            platform: platform,
+            userAgent: ua,
+            mobile: /Mobile|Android|iPhone|iPad|iPod/i.test(ua),
+            os: getOS(),
+            browser: getBrowser(),
+            timestamp: new Date().toISOString()
+        };
+    }
+
+    function getOS() {
+        const ua = navigator.userAgent;
+        if (/Windows/.test(ua)) return 'Windows';
+        if (/Mac OS X/.test(ua)) return 'macOS';
+        if (/iPhone|iPad|iPod/.test(ua)) return 'iOS';
+        if (/Android/.test(ua)) return 'Android';
+        return 'Unknown';
+    }
+
+    function getBrowser() {
+        const ua = navigator.userAgent;
+        if (/Chrome/.test(ua)) return 'Chrome';
+        if (/Firefox/.test(ua)) return 'Firefox';
+        if (/Safari/.test(ua)) return 'Safari';
+        if (/Edge/.test(ua)) return 'Edge';
+        return 'Unknown';
+    }
+
+    function showIOSInstallPrompt() {
+        // Show custom UI prompt for iOS users to add the app to home screen
+        const prompt = document.createElement('div');
+        prompt.className = 'ios-install-prompt';
+        prompt.innerHTML = `
+            <div class="prompt-content">
+                <h3>Install Nova Comm</h3>
+                <p>Add to Home Screen for the best experience and to receive notifications.</p>
+                <button class="close-prompt">Got it</button>
+            </div>
+        `;
+        document.body.appendChild(prompt);
+
+        prompt.querySelector('.close-prompt').onclick = () => {
+            prompt.remove();
+        };
     }
 
     // Message Input Setup - Single Source of Truth
@@ -1225,6 +1408,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Initialize message input
         setupMessageInput();
+        setupEffectSelector(); // Add this line
     }
 
     // Update startChat function to properly handle navigation
@@ -1294,6 +1478,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 contactsSidebar.classList.remove('active');
             }
 
+            // Close the sidebar on both mobile and desktop
+            contactsSidebar.classList.remove('active');
+
             hideLoading();
         } catch (error) {
             console.error("Error starting chat:", error);
@@ -1341,22 +1528,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const uniqueUsers = new Set();
             
-            // Get chats where user is either sender or receiver
-            const [sentChats, receivedChats] = await Promise.all([
-                // Get chats where user is sender
-                db.collection('messages')
-                    .where('userId', '==', currentUser.uid)
-                    .orderBy('timestamp', 'desc')
-                    .get(),
-                // Get chats where user is a participant
-                db.collection('messages')
-                    .where('chatId', 'array-contains', currentUser.uid)
-                    .orderBy('timestamp', 'desc')
-                    .get()
-            ]);
+            // Get all messages where user is involved
+            const messagesQuery = await db.collection('messages')
+                .orderBy('timestamp', 'desc')
+                .get();
 
-            // Process sent messages
-            sentChats.docs.forEach(doc => {
+            messagesQuery.docs.forEach(doc => {
                 const message = doc.data();
                 if (!message.chatId) return;
                 const users = message.chatId.split('_');
@@ -1365,16 +1542,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (otherUserId) uniqueUsers.add(otherUserId);
             });
 
-            // Process received messages
-            receivedChats.docs.forEach(doc => {
-                const message = doc.data();
-                if (!message.chatId) return;
-                const users = message.chatId.split('_');
-                if (users.length !== 2) return;
-                const otherUserId = users[0] === currentUser.uid ? users[1] : users[0];
-                if (otherUserId) uniqueUsers.add(otherUserId);
-            });
-
+            // Rest of the function remains the same...
             // Show empty state if no conversations
             if (uniqueUsers.size === 0) {
                 if (noChats) noChats.style.display = 'flex';
@@ -1434,12 +1602,12 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Update the click-outside handler for sidebar - remove mobile-only check
+    // Update the click-outside handler for sidebar
     document.addEventListener('click', (e) => {
-        if (!contactsSidebar.contains(e.target) && 
+        if (contactsSidebar.classList.contains('active') &&
+            !contactsSidebar.contains(e.target) && 
             !menuToggle.contains(e.target) && 
-            e.target !== menuToggle &&
-            contactsSidebar.classList.contains('active')) {
+            e.target !== menuToggle) {
             contactsSidebar.classList.remove('active');
         }
     });
@@ -1586,4 +1754,274 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+
+    // Add after message input setup
+    function setupEffectSelector() {
+        const messageInput = document.querySelector('.message-input');
+        const effectBtn = document.createElement('button');
+        effectBtn.className = 'effect-btn';
+        effectBtn.innerHTML = '<i class="ri-magic-line"></i>';
+        
+        const effectSelector = document.createElement('div');
+        effectSelector.className = 'effect-selector';
+        effectSelector.innerHTML = `
+            <button class="effect-btn" data-effect="slam">💥</button>
+            <button class="effect-btn" data-effect="loud">🔊</button>
+            <button class="effect-btn" data-effect="gentle">🌊</button>
+            <button class="effect-btn" data-effect="invisible">👻</button>
+        `;
+        
+        messageInput.querySelector('.message-input-container').appendChild(effectBtn);
+        messageInput.appendChild(effectSelector);
+
+        effectBtn.addEventListener('click', () => {
+            effectSelector.classList.toggle('active');
+        });
+
+        effectSelector.addEventListener('click', (e) => {
+            const effectBtn = e.target.closest('.effect-btn');
+            if (effectBtn) {
+                const effect = effectBtn.dataset.effect;
+                sendMessage(effect);
+                effectSelector.classList.remove('active');
+            }
+        });
+
+        // Close effect selector when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!effectBtn.contains(e.target) && !effectSelector.contains(e.target)) {
+                effectSelector.classList.remove('active');
+            }
+        });
+    }
+
+    // Add keyboard shortcut handling
+    document.addEventListener('keydown', (e) => {
+        // Only handle shortcuts if user is not typing in an input
+        const isTyping = document.activeElement.tagName === 'INPUT' || 
+                      document.activeElement.tagName === 'TEXTAREA';
+        
+        // Ctrl/Cmd + / to focus search
+        if ((e.ctrlKey || e.metaKey) && e.key === '/' && !isTyping) {
+            e.preventDefault();
+            document.querySelector('.message-search').focus();
+        }
+        
+        // Ctrl/Cmd + N for new chat
+        if ((e.ctrlKey || e.metaKey) && e.key === 'n' && !isTyping) {
+            e.preventDefault();
+            newChatBtn.click();
+        }
+        
+        // Esc to close modals/search
+        if (e.key === 'Escape') {
+            const searchPane = document.getElementById('searchPane');
+            if (searchPane.classList.contains('active')) {
+                closeSearchBtn.click();
+            }
+            // Close contacts sidebar on mobile
+            if (window.innerWidth < 768 && contactsSidebar.classList.contains('active')) {
+                contactsSidebar.classList.remove('active');
+            }
+        }
+        
+        // Ctrl/Cmd + K to toggle contacts sidebar
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k' && !isTyping) {
+            e.preventDefault();
+            contactsSidebar.classList.toggle('active');
+        }
+    });
+
+    // Add after other declarations
+    const globalSearch = document.getElementById('globalSearch');
+    const globalSearchInput = document.getElementById('globalSearchInput');
+    const searchResultsContainer = globalSearch.querySelector('.search-results');
+
+    // Move these functions outside of initializeGlobalSearch
+    function showGlobalSearch() {
+        globalSearch.classList.add('active');
+        globalSearchInput.focus();
+    }
+
+    function hideGlobalSearch() {
+        globalSearch.classList.remove('active');
+        globalSearchInput.value = '';
+        searchResultsContainer.innerHTML = '';
+    }
+
+    // Add global search functionality
+    function initializeGlobalSearch() {
+        let searchResults = {};
+
+        // Handle keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+                e.preventDefault();
+                showGlobalSearch();
+            }
+            if (e.key === 'Escape' && globalSearch.classList.contains('active')) {
+                hideGlobalSearch();
+            }
+        });
+
+        globalSearchInput.addEventListener('input', debounce(async (e) => {
+            const query = e.target.value.toLowerCase().trim();
+            if (!query) {
+                searchResultsContainer.innerHTML = '';
+                return;
+            }
+
+            searchResults = {
+                contacts: [],
+                messages: [],
+                features: [
+                    { title: 'New Chat', icon: 'ri-add-line', shortcut: '⌘N', action: () => newChatBtn.click() },
+                    { title: 'Settings', icon: 'ri-settings-3-line', shortcut: '⌘,', action: () => window.location.href = 'settings.html' },
+                    { title: 'Sign Out', icon: 'ri-logout-box-line', action: () => logoutBtn.click() },
+                ].filter(f => f.title.toLowerCase().includes(query))
+            };
+
+            // Search contacts
+            if (currentUser) {
+                const usersSnapshot = await db.collection('users')
+                    .where('email', '>=', query)
+                    .where('email', '<=', query + '\uf8ff')
+                    .limit(5)
+                    .get();
+
+                searchResults.contacts = usersSnapshot.docs
+                    .map(doc => ({ id: doc.id, ...doc.data() }))
+                    .filter(user => user.id !== currentUser.uid);
+            }
+
+            // Search messages
+            if (currentChat) {
+                const messagesSnapshot = await db.collection('messages')
+                    .where('chatId', '==', currentChat)
+                    .where('text', '>=', query)
+                    .orderBy('text')
+                    .limit(5)
+                    .get();
+
+                searchResults.messages = messagesSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+            }
+
+            // Render results
+            renderSearchResults(searchResults);
+        }, 300));
+
+        function renderSearchResults(results) {
+            searchResultsContainer.innerHTML = '';
+
+            // Features section
+            if (results.features.length) {
+                const featuresSection = document.createElement('div');
+                featuresSection.className = 'search-section';
+                featuresSection.innerHTML = `
+                    <div class="search-section-title">Features</div>
+                    ${results.features.map(feature => `
+                        <div class="search-item" data-feature="${feature.title}">
+                            <i class="${feature.icon}"></i>
+                            <span class="item-title">${feature.title}</span>
+                            ${feature.shortcut ? `<span class="search-shortcut">${feature.shortcut}</span>` : ''}
+                        </div>
+                    `).join('')}
+                `;
+                searchResultsContainer.appendChild(featuresSection);
+
+                // Add click handlers for features
+                featuresSection.querySelectorAll('.search-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        const feature = results.features.find(f => f.title === item.dataset.feature);
+                        if (feature) {
+                            hideGlobalSearch();
+                            feature.action();
+                        }
+                    });
+                });
+            }
+
+            // Contacts section
+            if (results.contacts.length) {
+                const contactsSection = document.createElement('div');
+                contactsSection.className = 'search-section';
+                contactsSection.innerHTML = `
+                    <div class="search-section-title">Contacts</div>
+                    ${results.contacts.map(contact => `
+                        <div class="search-item" data-user-id="${contact.id}">
+                            <img src="${contact.photoURL || defaultAvatar}" class="avatar" alt="${contact.email}">
+                            <span class="item-title">${contact.displayName || contact.email}</span>
+                        </div>
+                    `).join('')}
+                `;
+                searchResultsContainer.appendChild(contactsSection);
+
+                // Add click handlers for contacts
+                contactsSection.querySelectorAll('.search-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        hideGlobalSearch();
+                        startChat(item.dataset.userId);
+                    });
+                });
+            }
+
+            // Messages section
+            if (results.messages.length) {
+                const messagesSection = document.createElement('div');
+                messagesSection.className = 'search-section';
+                messagesSection.innerHTML = `
+                    <div class="search-section-title">Messages</div>
+                    ${results.messages.map(message => `
+                        <div class="search-item" data-message-id="${message.id}">
+                            <i class="ri-message-2-line"></i>
+                            <span class="item-title">${message.text}</span>
+                        </div>
+                    `).join('')}
+                `;
+                searchResultsContainer.appendChild(messagesSection);
+
+                // Add click handlers for messages
+                messagesSection.querySelectorAll('.search-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        hideGlobalSearch();
+                        // Scroll to message and highlight it
+                        const messageEl = document.getElementById(item.dataset.messageId);
+                        if (messageEl) {
+                            messageEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            messageEl.classList.add('highlight');
+                            setTimeout(() => messageEl.classList.remove('highlight'), 2000);
+                        }
+                    });
+                });
+            }
+        }
+    }
+
+    const spotlightSearchBtn = document.getElementById('spotlightSearchBtn');
+
+    if (spotlightSearchBtn) {
+        spotlightSearchBtn.addEventListener('click', () => {
+            showGlobalSearch();
+        });
+    }
+
+    // Update keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        // Only handle shortcuts if user is not typing in an input
+        const isTyping = document.activeElement.tagName === 'TEXTAREA';
+        
+        // Ctrl/Cmd + K to open global search
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k' && !isTyping) {
+            e.preventDefault();
+            showGlobalSearch();
+        }
+        
+        // Esc to close search
+        if (e.key === 'Escape') {
+            hideGlobalSearch();
+        }
+    });
 });

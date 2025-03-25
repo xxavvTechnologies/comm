@@ -1,0 +1,7 @@
+Contact: mailto:security.xts@xxavvgroup.com
+Expires: 2025-12-31T23:59:59.000Z
+Encryption: https://novasuite.one/pgp-key.txt
+Acknowledgments: https://novasuite.one/security/hall-of-fame
+Preferred-Languages: en
+Canonical: https://comm.novasuite.one/.well-known/security.txt
+Policy: https://novasuite.one/security-policy

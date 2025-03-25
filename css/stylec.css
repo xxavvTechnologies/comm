@@ -1110,3 +1110,119 @@
         -webkit-backdrop-filter: blur(4px);
     }
 }
+
+/* Message Reactions */
+.message-reactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+    padding: 4px 0;
+}
+
+.reaction-badge {
+    padding: 2px 6px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: var(--text-color);
+}
+
+.reaction-badge:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.05);
+}
+
+.reaction-badge.reacted {
+    background: var(--primary-color);
+    color: white;
+}
+
+/* Message Search */
+.message-search-container {
+    position: relative;
+    padding: 0 1rem;
+}
+
+.message-search {
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--message-bubble);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: var(--text-color);
+    font-size: 0.875rem;
+}
+
+.message-search-results {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 1rem;
+    right: 1rem;
+    background: var(--secondary-background);
+    border-radius: var(--border-radius);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 100;
+    display: none;
+}
+
+.message-search-results.active {
+    display: block;
+}
+
+.search-result {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+}
+
+.search-result:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.search-result-content {
+    font-size: 0.875rem;
+    margin-bottom: 4px;
+}
+
+.search-result-time {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* Markdown Styles */
+.message-content strong {
+    font-weight: 600;
+}
+
+.message-content em {
+    font-style: italic;
+}
+
+.message-content code {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px 4px;
+    border-radius: 4px;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.9em;
+}
+
+.message-content del {
+    text-decoration: line-through;
+    opacity: 0.7;
+}
+
+/* Message Highlight */
+@keyframes highlight {
+    0%, 100% { background: transparent; }
+    50% { background: rgba(var(--primary-color-rgb), 0.2); }
+}
+
+.message.highlight {
+    animation: highlight 2s ease;
+}

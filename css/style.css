@@ -222,10 +222,18 @@ social-login-divider span {
 
 /* Updated Chat Header Styles */
 .chat-header {
-    padding: 1.25rem;
-    padding-top: calc(1.25rem + var(--safe-area-top));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem;
+    padding-top: max(1rem, env(safe-area-inset-top));
     background: var(--secondary-background);
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
 }
 
 .chat-header .user-info {
@@ -281,10 +289,37 @@ social-login-divider span {
 }
 
 .mobile-nav {
+    flex: 1;
     display: flex;
     align-items: center;
     gap: 1rem;
     width: 100%;
+}
+
+.message-search-container {
+    width: 300px;
+    margin-left: 1rem;
+    position: relative;
+}
+
+@media (max-width: 768px) {
+    .message-search-container {
+        display: none;
+    }
+    
+    .mobile-nav {
+        width: 100%;
+    }
+}
+
+/* Add keyboard shortcut hints */
+.key-hint {
+    padding: 0.25rem 0.5rem;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-left: 0.5rem;
 }
 
 /* Messages container styles */
