@@ -921,3 +921,87 @@ social-login-divider span {
 }
 
 /* Remove storage-dependent styles */
+
+.voice-record-btn {
+    padding: 8px;
+    background: none;
+    border: none;
+    color: var(--text-2);
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.voice-record-btn:hover {
+    color: var(--primary);
+}
+
+.voice-recording-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px;
+    background: var(--surface-2);
+    border-radius: 8px;
+    margin-top: 8px;
+}
+
+.recording-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+}
+
+.recording-time {
+    color: var(--primary);
+    font-weight: 500;
+}
+
+.recording-wave {
+    height: 20px;
+    flex: 1;
+    background: linear-gradient(90deg, var(--primary) 0%, var(--primary-light) 100%);
+    border-radius: 4px;
+    animation: wave 1s ease-in-out infinite;
+}
+
+.voice-message {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    background: var(--surface-2);
+    border-radius: 8px;
+    width: 200px;
+}
+
+.play-voice {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: white;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.voice-waveform {
+    flex: 1;
+    height: 20px;
+    background: var(--surface-3);
+    border-radius: 4px;
+}
+
+.voice-duration {
+    color: var(--text-2);
+    font-size: 0.875rem;
+}
+
+@keyframes wave {
+    0% { transform: scaleY(0.5); }
+    50% { transform: scaleY(1); }
+    100% { transform: scaleY(0.5); }
+}

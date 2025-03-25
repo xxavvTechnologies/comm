@@ -173,6 +173,9 @@
             </div>
             <div class="message-input">
                 <div class="message-input-container">
+                    <button class="voice-record-btn" id="voiceRecordBtn">
+                        <i class="ri-mic-line"></i>
+                    </button>
                     <textarea 
                         placeholder="Type a message..." 
                         rows="1"
@@ -183,6 +186,18 @@
                     ></textarea>
                     <button class="send-message" disabled>
                         <i class="ri-send-plane-fill"></i>
+                    </button>
+                </div>
+                <div class="voice-recording-controls" id="voiceControls" style="display: none;">
+                    <div class="recording-indicator">
+                        <span class="recording-time">0:00</span>
+                        <div class="recording-wave"></div>
+                    </div>
+                    <button class="cancel-recording" id="cancelRecording">
+                        <i class="ri-close-line"></i>
+                    </button>
+                    <button class="send-recording" id="sendRecording">
+                        <i class="ri-check-line"></i>
                     </button>
                 </div>
             </div>

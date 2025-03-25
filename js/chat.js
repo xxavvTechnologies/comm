@@ -21,11 +21,13 @@ document.addEventListener('DOMContentLoaded', function() {
     let unreadCounts = new Map();
     let currentChats = new Set();
     let isRecording = false;
-    let mediaRecorder = null;
+    let mediaRecorder = null;  // Only declare once here
     let audioChunks = [];
     let currentUser = null;
     let currentChat = null;
     let messageUnsubscribe = null;
+    let recordingTimer = null;
+    let recordingStartTime = null;
 
     // Add new function near the top with other declarations
     function updateReadStatus(messageId, readStatus) {
@@ -864,7 +866,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 messageContent = createFilePreview(message);
                 break;
             case 'voice':
-                messageContent = createVoiceMessage(message);
+                messageContent = `
+                    <div class="voice-message">
+                        <button class="play-voice" data-audio="${message.audio}">
+                            <i class="ri-play-fill"></i>
+                        </button>
+                        <div class="voice-waveform"></div>
+                        <span class="voice-duration">${formatDuration(message.duration)}</span>
+                    </div>
+                `;
                 break;
             default:
                 messageContent = parseMarkdown(processMessageText(message.text)); // Add markdown parsing
@@ -1203,7 +1213,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             // Register service worker
-            const registration = await navigator.serviceWorker.register('/js/notifications-worker.js', {
+            const registration = await navigator.serviceWorker.register('/notifications-worker.js', {
                 scope: '/'
             });
 
@@ -1222,14 +1232,24 @@ document.addEventListener('DOMContentLoaded', function() {
             });
 
             if (token && currentUser) {
-                // Save token to user profile
+                // Create a new device token entry
+                const tokenData = {
+                    token: token,
+                    device: getDeviceInfo(),
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+
+                // Update user's notification tokens using set with merge
                 await db.collection('users').doc(currentUser.uid).set({
-                    notificationTokens: firebase.firestore.FieldValue.arrayUnion({
-                        token,
-                        device: getDeviceInfo(),
-                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                    })
+                    notificationTokens: [{
+                        ...tokenData
+                    }]
                 }, { merge: true });
+
+                // Update last token update timestamp
+                await db.collection('users').doc(currentUser.uid).update({
+                    lastTokenUpdate: firebase.firestore.FieldValue.serverTimestamp()
+                });
             }
 
             // Handle foreground messages
@@ -1313,12 +1333,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const platform = navigator.platform;
         
         return {
-            platform: platform,
-            userAgent: ua,
+            platform: platform || 'unknown',
+            userAgent: ua || 'unknown',
             mobile: /Mobile|Android|iPhone|iPad|iPod/i.test(ua),
             os: getOS(),
             browser: getBrowser(),
-            timestamp: new Date().toISOString()
+            lastSeen: new Date().toISOString() // Use ISO string instead of timestamp
         };
     }
 
@@ -2024,4 +2044,113 @@ document.addEventListener('DOMContentLoaded', function() {
             hideGlobalSearch();
         }
     });
+
+    // Add voice recording variables
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let recordingTimer = null;
+    let recordingStartTime = null;
+
+    // Add voice recording setup
+    function setupVoiceRecording() {
+        const voiceRecordBtn = document.getElementById('voiceRecordBtn');
+        const voiceControls = document.getElementById('voiceControls');
+        const cancelRecordingBtn = document.getElementById('cancelRecording');
+        const sendRecordingBtn = document.getElementById('sendRecording');
+        const recordingTime = document.querySelector('.recording-time');
+
+        if (!voiceRecordBtn) return;
+
+        voiceRecordBtn.addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.addEventListener('dataavailable', event => {
+                    audioChunks.push(event.data);
+                });
+
+                mediaRecorder.addEventListener('stop', () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
+                    if (audioChunks.length > 0) {
+                        uploadAndSendVoiceMessage(audioBlob);
+                    }
+                    stream.getTracks().forEach(track => track.stop());
+                });
+
+                mediaRecorder.start();
+                recordingStartTime = Date.now();
+                updateRecordingTimer();
+                voiceControls.style.display = 'flex';
+                voiceRecordBtn.style.display = 'none';
+            } catch (error) {
+                console.error('Error starting voice recording:', error);
+                alert('Could not access microphone');
+            }
+        });
+
+        cancelRecordingBtn.addEventListener('click', stopRecording.bind(null, true));
+        sendRecordingBtn.addEventListener('click', stopRecording.bind(null, false));
+    }
+
+    function updateRecordingTimer() {
+        const recordingTime = document.querySelector('.recording-time');
+        if (!recordingStartTime || !recordingTime) return;
+
+        recordingTimer = setInterval(() => {
+            const duration = Math.floor((Date.now() - recordingStartTime) / 1000);
+            const minutes = Math.floor(duration / 60);
+            const seconds = duration % 60;
+            recordingTime.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        }, 1000);
+    }
+
+    function stopRecording(cancel = false) {
+        if (!mediaRecorder) return;
+
+        const voiceControls = document.getElementById('voiceControls');
+        const voiceRecordBtn = document.getElementById('voiceRecordBtn');
+
+        clearInterval(recordingTimer);
+        mediaRecorder.stop();
+        voiceControls.style.display = 'none';
+        voiceRecordBtn.style.display = 'block';
+        
+        if (cancel) {
+            audioChunks = [];
+        }
+    }
+
+    async function uploadAndSendVoiceMessage(audioBlob) {
+        try {
+            // Convert blob to base64
+            const reader = new FileReader();
+            reader.readAsDataURL(audioBlob);
+            reader.onloadend = async () => {
+                const base64Audio = reader.result;
+                
+                // Create message with voice content
+                const messageData = {
+                    type: 'voice',
+                    audio: base64Audio,
+                    duration: Math.floor((Date.now() - recordingStartTime) / 1000),
+                    userId: currentUser.uid,
+                    chatId: currentChat,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    readBy: [],
+                    readAt: null
+                };
+
+                // Send message
+                await db.collection('messages').add(messageData);
+            };
+        } catch (error) {
+            console.error('Error sending voice message:', error);
+            alert('Failed to send voice message');
+        }
+    }
+
+    // Initialize voice recording when chat loads
+    setupVoiceRecording();
 });

@@ -26,6 +26,7 @@
   for = "/*.js"
   [headers.values]
     Cache-Control = "public, max-age=31536000"
+    Service-Worker-Allowed = "/"
 
 [[headers]]
   for = "/*.css"
@@ -41,6 +42,20 @@
   for = "/*.jpg"
   [headers.values]
     Cache-Control = "public, max-age=31536000"
+
+[[headers]]
+  for = "/notifications-worker.js"
+  [headers.values]
+    Service-Worker-Allowed = "/"
+    Cache-Control = "no-cache"
+    Content-Type = "application/javascript"
+
+[[headers]]
+  for = "/service-worker.js"
+  [headers.values]
+    Service-Worker-Allowed = "/"
+    Cache-Control = "no-cache"
+    Content-Type = "application/javascript"
 
 [build.processing]
   skip_processing = false
