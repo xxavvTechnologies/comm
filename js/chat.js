@@ -21,13 +21,9 @@ document.addEventListener('DOMContentLoaded', function() {
     let unreadCounts = new Map();
     let currentChats = new Set();
     let isRecording = false;
-    let mediaRecorder = null;  // Only declare once here
-    let audioChunks = [];
     let currentUser = null;
     let currentChat = null;
     let messageUnsubscribe = null;
-    let recordingTimer = null;
-    let recordingStartTime = null;
 
     // Add new function near the top with other declarations
     function updateReadStatus(messageId, readStatus) {
@@ -232,9 +228,12 @@ document.addEventListener('DOMContentLoaded', function() {
         if (messageInput) {
             messageInput.disabled = !enabled;
             messageInput.placeholder = enabled ? "Type a message..." : "Select a chat to start messaging";
-        }
-        if (sendButton) {
-            sendButton.disabled = !enabled;
+            
+            // Update send button state based on input content
+            const sendButton = document.querySelector('.send-message');
+            if (sendButton) {
+                sendButton.disabled = !enabled || !messageInput.value.trim();
+            }
         }
     }
 
@@ -477,7 +476,21 @@ document.addEventListener('DOMContentLoaded', function() {
         return date.toLocaleDateString();
     }
 
-    // Update last message for a contact
+    // Add this helper function near the other utility functions
+    function getMessagePreview(message) {
+        if (!message) return '';
+        
+        switch (message.type) {
+            case 'voice':
+                return '🎤 Voice message';
+            case 'file':
+                return '📎 File attachment';
+            default:
+                return message.text?.substring(0, 30) + (message.text?.length > 30 ? '...' : '') || '';
+        }
+    }
+
+    // Update updateLastMessage function
     async function updateLastMessage(userId) {
         const chatId = [currentUser.uid, userId].sort().join('_');
         const lastMessage = await db.collection('messages')
@@ -492,7 +505,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (contactDiv) {
                 const lastMessageEl = contactDiv.querySelector('.last-message');
                 if (lastMessageEl) {
-                    lastMessageEl.textContent = messageData.text.substring(0, 30) + (messageData.text.length > 30 ? '...' : '');
+                    lastMessageEl.textContent = getMessagePreview(messageData);
                 }
             }
         }
@@ -702,6 +715,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Add link detection and sanitization
     function processMessageText(text) {
+        // Add null check at the start
+        if (!text) return '';
+        
         // First handle line breaks
         const withLineBreaks = text.replace(/\n/g, '<br>');
         
@@ -804,6 +820,13 @@ document.addEventListener('DOMContentLoaded', function() {
             .replace(/~~(.*?)~~/g, '<del>$1</del>');          // Strikethrough
     }
 
+    // Add after other utility functions and before displayMessage
+    function formatDuration(seconds) {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = Math.floor(seconds % 60);
+        return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }
+
     // Update the displayMessage function to include message ID and handle context menu
     async function displayMessage(message, messageId) {
         const messageDiv = document.createElement('div');
@@ -868,11 +891,11 @@ document.addEventListener('DOMContentLoaded', function() {
             case 'voice':
                 messageContent = `
                     <div class="voice-message">
-                        <button class="play-voice" data-audio="${message.audio}">
+                        <button class="play-pause">
                             <i class="ri-play-fill"></i>
                         </button>
-                        <div class="voice-waveform"></div>
-                        <span class="voice-duration">${formatDuration(message.duration)}</span>
+                        <div class="voice-progress"></div>
+                        <span class="duration">${formatDuration(message.duration || 0)}</span>
                     </div>
                 `;
                 break;
@@ -925,9 +948,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         // Lazy load link previews
-        const urls = message.text.match(/(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/g);
-        if (urls) {
-            setTimeout(() => loadLinkPreview(urls[0], messageDiv), 100);
+        if (message.type === 'text' && message.text) {
+            const urls = message.text.match(/(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/g);
+            if (urls) {
+                setTimeout(() => loadLinkPreview(urls[0], messageDiv), 100);
+            }
         }
 
         // Add context menu handlers
@@ -1137,10 +1162,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 // If offline, queue for background sync
                 if ('serviceWorker' in navigator && 'SyncManager' in window) {
                     const sw = await navigator.serviceWorker.ready;
+                    // Create a serializable copy of the message data
+                    const serializableMessage = {
+                        ...messageData,
+                        timestamp: Date.now() // Use timestamp instead of Firestore timestamp
+                    };
                     // Queue message for sync
                     sw.active.postMessage({
                         type: 'queue-message',
-                        message: messageData
+                        message: serializableMessage
                     });
                     // Register for background sync
                     await sw.sync.register('sync-messages');
@@ -1236,17 +1266,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 const tokenData = {
                     token: token,
                     device: getDeviceInfo(),
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    createdAt: new Date().toISOString() // Use ISO string instead of serverTimestamp
                 };
 
-                // Update user's notification tokens using set with merge
+                // First update tokens array
                 await db.collection('users').doc(currentUser.uid).set({
-                    notificationTokens: [{
-                        ...tokenData
-                    }]
+                    notificationTokens: [tokenData]
                 }, { merge: true });
 
-                // Update last token update timestamp
+                // Then update last token update timestamp separately
                 await db.collection('users').doc(currentUser.uid).update({
                     lastTokenUpdate: firebase.firestore.FieldValue.serverTimestamp()
                 });
@@ -1398,28 +1426,38 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
-            // Input event - handles typing and resize
+            // Input event - handles typing, resize and send button state
             messageInput.addEventListener('input', () => {
                 handleTyping();
                 autoResize();
+                // Enable/disable send button based on input content
+                const sendButton = document.querySelector('.send-message');
+                if (sendButton) {
+                    sendButton.disabled = !messageInput.value.trim();
+                }
             });
 
             // Enter key handling
             messageInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    if (e.shiftKey) {
-                        // Let the new line happen naturally
-                        setTimeout(autoResize, 0);
-                    } else {
-                        e.preventDefault();
-                        sendMessage();
-                    }
+                if (e.key === 'Enter' && !e.shiftKey && messageInput.value.trim()) {
+                    e.preventDefault();
+                    sendMessage();
+                } else if (e.key === 'Enter' && e.shiftKey) {
+                    // Let the new line happen naturally
+                    setTimeout(autoResize, 0);
                 }
             });
 
             // Send button handler
+            const sendButton = document.querySelector('.send-message');
             if (sendButton) {
-                sendButton.addEventListener('click', sendMessage);
+                sendButton.addEventListener('click', () => {
+                    if (messageInput.value.trim()) {
+                        sendMessage();
+                    }
+                });
+                // Initialize send button state
+                sendButton.disabled = !messageInput.value.trim();
             }
 
             // Initial resize
@@ -1428,7 +1466,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Initialize message input
         setupMessageInput();
-        setupEffectSelector(); // Add this line
+        setupEffectSelector();
     }
 
     // Update startChat function to properly handle navigation
