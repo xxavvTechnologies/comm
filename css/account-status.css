@@ -1,0 +1,114 @@
+.status-content {
+    padding: 2rem;
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.status-overview {
+    background: var(--secondary-background);
+    border-radius: var(--border-radius);
+    padding: 2rem;
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.status-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.status-indicator i {
+    font-size: 3rem;
+}
+
+.status-indicator.good i {
+    color: var(--success-color);
+}
+
+.status-indicator.warning i {
+    color: var(--warning-color);
+}
+
+.status-indicator.danger i {
+    color: var(--danger-color);
+}
+
+.warning-history {
+    background: var(--secondary-background);
+    border-radius: var(--border-radius);
+    padding: 2rem;
+    margin-bottom: 2rem;
+}
+
+.warnings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.warning-item {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: var(--border-radius-sm);
+    padding: 1rem;
+}
+
+.warning-item .warning-date {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.warning-item .warning-reason {
+    margin-top: 0.5rem;
+}
+
+.standing-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1rem 0;
+}
+
+.step {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+    padding: 1rem;
+    background: var(--secondary-background);
+    border-radius: var(--border-radius);
+}
+
+.step-number {
+    background: var(--primary-color);
+    color: white;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.step-info h3 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.step-info p {
+    margin: 0.25rem 0 0;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.step.current {
+    border: 1px solid var(--primary-color);
+}
+
+@media (max-width: 768px) {
+    .status-content {
+        padding: 1rem;
+    }
+}

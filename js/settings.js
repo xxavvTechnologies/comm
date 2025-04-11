@@ -38,6 +38,8 @@ window.addEventListener('load', async function() {
         const soundEnabled = document.getElementById('soundEnabled');
         const readReceipts = document.getElementById('readReceipts');
         const onlineStatus = document.getElementById('onlineStatus');
+        const shareCodeInput = document.getElementById('shareCode');
+        const copyShareCodeBtn = document.getElementById('copyShareCode');
         
         let currentUser = null;
 
@@ -57,6 +59,18 @@ window.addEventListener('load', async function() {
                     const userDoc = await db.collection('users').doc(user.uid).get();
                     const userData = userDoc.data() || {};
                     
+                    // Generate share code if user doesn't have one
+                    if (!userData.shareCode) {
+                        const shareCode = await generateShareCode();
+                        await db.collection('users').doc(user.uid).update({
+                            shareCode: shareCode
+                        });
+                        userData.shareCode = shareCode;
+                    }
+                    
+                    // Update share code display
+                    shareCodeInput.value = userData.shareCode;
+
                     // Update UI with user data
                     profilePicture.src = userData.photoURL || 'https://www.gravatar.com/avatar/00000000000000000000000000000000?d=mp&f=y';
                     displayName.value = userData.displayName || '';
@@ -162,6 +176,19 @@ window.addEventListener('load', async function() {
                 setLoading(false);
             }
         });
+
+        // Add copy share code functionality
+        copyShareCodeBtn?.addEventListener('click', () => {
+            shareCodeInput.select();
+            document.execCommand('copy');
+            
+            // Show feedback
+            const originalIcon = copyShareCodeBtn.innerHTML;
+            copyShareCodeBtn.innerHTML = '<i class="ri-check-line"></i>';
+            setTimeout(() => {
+                copyShareCodeBtn.innerHTML = originalIcon;
+            }, 2000);
+        });
     } catch (error) {
         console.error('Settings initialization error:', error);
         alert('Failed to initialize Firebase services. Please refresh the page.');
@@ -256,4 +283,21 @@ async function updateUserPreferences(prefs) {
         console.error('Error updating preferences:', error);
         throw new Error('Failed to update preferences');
     }
+}
+
+// Generate a random share code if user doesn't have one
+async function generateShareCode() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code;
+    let isUnique = false;
+    
+    while (!isUnique) {
+        code = Array.from({length: 8}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+        const existing = await db.collection('users')
+            .where('shareCode', '==', code)
+            .get();
+        isUnique = existing.empty;
+    }
+    
+    return code;
 }

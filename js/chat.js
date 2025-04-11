@@ -1,3 +1,5 @@
+import { getCommands, executeCommand, getSuggestions } from './commands.js';
+
 document.addEventListener('DOMContentLoaded', function() {
     // Add debounce function at the top
     function debounce(func, wait) {
@@ -24,6 +26,10 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentUser = null;
     let currentChat = null;
     let messageUnsubscribe = null;
+    let isGroupChat = false;
+
+    // Initialize eventBus reference
+    const eventBus = window.eventBus;
 
     // Add new function near the top with other declarations
     function updateReadStatus(messageId, readStatus) {
@@ -240,87 +246,90 @@ document.addEventListener('DOMContentLoaded', function() {
     // Update user status tracking to use main users collection
     let userStatusRef = null;
     function setupUserStatus() {
-        if (!currentUser) return;
+        if (!currentUser || !eventBus) return;
         
-        // References
-        const userStatusFirestoreRef = db.collection('users').doc(currentUser.uid);
-        const userStatusDatabaseRef = firebase.database().ref('/status/' + currentUser.uid);
-
-        const isOfflineForDatabase = {
+        const userStatusRef = firebase.database().ref(`/status/${currentUser.uid}`);
+        const userDocRef = db.collection('users').doc(currentUser.uid);
+        
+        const isOffline = {
             state: 'offline',
-            last_changed: firebase.database.ServerValue.TIMESTAMP,
+            lastSeen: firebase.database.ServerValue.TIMESTAMP
         };
-
-        const isOnlineForDatabase = {
+        
+        const isOnline = {
             state: 'online',
-            last_changed: firebase.database.ServerValue.TIMESTAMP,
+            lastSeen: firebase.database.ServerValue.TIMESTAMP
         };
 
-        const isOfflineForFirestore = {
-            status: 'offline',
-            lastSeen: firebase.firestore.FieldValue.serverTimestamp(),
-        };
+        // When disconnected, update status
+        userStatusRef.onDisconnect().set(isOffline);
 
-        const isOnlineForFirestore = {
-            status: 'online',
-            lastSeen: firebase.firestore.FieldValue.serverTimestamp(),
-        };
-
-        // Create a reference to the special '.info/connected' path
-        const connectionRef = firebase.database().ref('.info/connected');
-
-        // When the client's connection state changes...
-        connectionRef.on('value', async (snapshot) => {
-            if (snapshot.val() === false) {
-                // Instead of waiting for disconnect, update Firestore immediately
-                await userStatusFirestoreRef.update(isOfflineForFirestore);
-                return;
+        // When connected/visibility changes
+        firebase.database().ref('.info/connected').on('value', async (snapshot) => {
+            if (!snapshot.val()) return;
+            
+            if (document.visibilityState === 'visible') {
+                await userStatusRef.set(isOnline);
+                await userDocRef.update({ 
+                    status: 'online',
+                    lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            } else {
+                await userStatusRef.set(isOffline);
+                await userDocRef.update({
+                    status: 'away',
+                    lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+                });
             }
+        });
 
-            try {
-                // When we lose connection, update the Realtime Database
-                await userStatusDatabaseRef.onDisconnect().set(isOfflineForDatabase);
+        // Listen for status changes of active chats
+        const statusListener = (userId) => {
+            return firebase.database().ref(`/status/${userId}`).on('value', async (snapshot) => {
+                const status = snapshot.val();
+                if (!status) return;
                 
-                // Update both databases to show we're online
-                await Promise.all([
-                    userStatusDatabaseRef.set(isOnlineForDatabase),
-                    userStatusFirestoreRef.update(isOnlineForFirestore)
-                ]);
-            } catch (error) {
-                console.error('Error setting up presence:', error);
-            }
-        });
+                // Update UI elements showing this user's status
+                updateUserStatusUI(userId, status);
+            });
+        };
 
-        // Handle tab visibility changes
-        document.addEventListener('visibilitychange', async () => {
-            try {
-                const updates = document.visibilityState === 'hidden' 
-                    ? [
-                        userStatusDatabaseRef.set(isOfflineForDatabase),
-                        userStatusFirestoreRef.update(isOfflineForFirestore)
-                    ]
-                    : [
-                        userStatusDatabaseRef.set(isOnlineForDatabase),
-                        userStatusFirestoreRef.update(isOnlineForFirestore)
-                    ];
-                
-                await Promise.all(updates);
-            } catch (error) {
-                console.error('Error updating presence:', error);
-            }
-        });
+        // Track status listeners to cleanup
+        const statusListeners = new Map();
 
-        // Handle page unload
-        window.addEventListener('beforeunload', async () => {
-            try {
-                await Promise.all([
-                    userStatusDatabaseRef.set(isOfflineForDatabase),
-                    userStatusFirestoreRef.update(isOfflineForFirestore)
-                ]);
-            } catch (error) {
-                console.error('Error updating presence:', error);
+        // Add status listener when chat starts
+        eventBus.on('chatStarted', (userId) => {
+            if (!statusListeners.has(userId)) {
+                statusListeners.set(userId, statusListener(userId));
             }
         });
+    }
+
+    function updateUserStatusUI(userId, status) {
+        // Update in contacts list
+        const contactEl = document.querySelector(`.contact[data-user-id="${userId}"]`);
+        if (contactEl) {
+            const statusIndicator = contactEl.querySelector('.status-indicator');
+            const statusText = contactEl.querySelector('.last-time');
+            
+            if (status.state === 'online') {
+                statusIndicator?.classList.add('online');
+                statusText.textContent = 'Online';
+            } else {
+                statusIndicator?.classList.remove('online');
+                statusText.textContent = formatLastSeen(status.lastSeen);
+            }
+        }
+
+        // Update in chat header if active chat
+        if (currentChat?.includes(userId)) {
+            const headerStatus = document.querySelector('.chat-header .status');
+            if (headerStatus) {
+                headerStatus.innerHTML = status.state === 'online' ?
+                    '<i class="ri-checkbox-blank-circle-fill"></i> Online' :
+                    `<i class="ri-time-line"></i> Last seen ${formatLastSeen(status.lastSeen)}`;
+            }
+        }
     }
 
     // Update typing handler to use debounce and queue
@@ -523,6 +532,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Add URL parameter handling
+    function getChatIdFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('chat');
+    }
+
     // Update the auth state change handler
     auth.onAuthStateChanged((user) => {
         if (user) {
@@ -534,6 +549,17 @@ document.addEventListener('DOMContentLoaded', function() {
             // Don't load messages until a chat is selected
             loadRecentContacts();
             initializeGlobalSearch();
+
+            // Verify chat access when loading from URL
+            const chatId = getChatIdFromUrl();
+            if (chatId) {
+                startChat(chatId).catch(() => {
+                    // On any error, clear invalid chat ID from URL
+                    const url = new URL(window.location);
+                    url.searchParams.delete('chat');
+                    window.history.replaceState({}, '', url);
+                });
+            }
         } else {
             window.location.href = 'index.html';
         }
@@ -710,8 +736,27 @@ document.addEventListener('DOMContentLoaded', function() {
             <i class="ri-delete-bin-line"></i>
             Delete
         </div>
+        <div class="context-menu-item report">
+            <i class="ri-flag-line"></i>
+            Report
+        </div>
     `;
     document.body.appendChild(contextMenu);
+
+    // Add new menu items to settings
+    const menuItems = [
+    ];
+
+    menuItems.forEach(item => {
+        const menuItem = document.createElement('div');
+        menuItem.className = 'context-menu-item';
+        menuItem.innerHTML = `
+            <i class="${item.icon}"></i>
+            ${item.title}
+        `;
+        menuItem.onclick = () => window.location.href = item.href;
+        document.querySelector('.message-context-menu').appendChild(menuItem);
+    });
 
     // Add link detection and sanitization
     function processMessageText(text) {
@@ -899,6 +944,54 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                 `;
                 break;
+            case 'command':
+                messageDiv.classList.add('command');
+                messageContent = `
+                    ${message.text}
+                    <div class="command-action">
+                        ${message.userEmail || 'User'} ${message.actionText}
+                    </div>
+                `;
+                
+                // Add effect animation
+                if (message.effect) {
+                    messageDiv.classList.add(`effect-${message.effect}`);
+                    messageDiv.dataset.seed = message.seed;
+                }
+                                    // Add replay button for effects
+                                    messageContent += `
+                                    <button class="replay-effect" onclick="replayEffect(this.closest('.message'))">
+                                        <i class="ri-restart-line"></i>
+                                    </button>
+                                `;
+                break;
+            case 'action':
+                messageDiv.classList.add('action');
+                messageContent = `<div class="message-content">* ${message.userEmail} ${message.text}</div>`;
+                break;
+            case 'poll':
+                messageDiv.classList.add('poll');
+                messageContent = `
+                    <div class="message-content">
+                        <div class="poll-question">${message.question}</div>
+                        <div class="poll-options">
+                            ${message.options.map((option, i) => `
+                                <div class="poll-option" data-option="${i}">
+                                    <span class="option-text">${option}</span>
+                                    <span class="votes">${Object.values(message.votes || {}).filter(v => v === i).length}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+                break;
+            case 'gif':
+                messageContent = `
+                    <div class="message-content">
+                        <img src="${message.url}" alt="${message.text}" loading="lazy" class="gif-image">
+                    </div>
+                `;
+                break;
             default:
                 messageContent = parseMarkdown(processMessageText(message.text)); // Add markdown parsing
         }
@@ -983,13 +1076,28 @@ document.addEventListener('DOMContentLoaded', function() {
         setupDragToReply(messageDiv, message);
         setupSwipeToReply(messageDiv, message);
 
+        // Add command interaction handlers
+        if (message.type === 'command') {
+            if (message.commandType === 'poll') {
+                setTimeout(() => {
+                    messageDiv.querySelectorAll('.poll-option').forEach(option => {
+                        option.addEventListener('click', async () => {
+                            const optionIndex = parseInt(option.dataset.option);
+                            const pollId = option.dataset.pollId;
+                            await db.collection('messages').doc(pollId).update({
+                                [`votes.${currentUser.uid}`]: optionIndex
+                            });
+                        });
+                    });
+                }, 0);
+            }
+        }
+
         messageArea.appendChild(messageDiv);
 
+        // Play effect animation if present
         if (message.effect) {
-            const replayBtn = messageDiv.querySelector('.replay-effect');
-            replayBtn.addEventListener('click', () => {
-                replayEffect(messageDiv, message.effect);
-            });
+            playEffect(messageDiv, message.effect, message.seed);
         }
     }
 
@@ -1056,9 +1164,13 @@ document.addEventListener('DOMContentLoaded', function() {
     function showContextMenu(event, message, messageId) {
         const menu = document.querySelector('.message-context-menu');
         const deleteOption = menu.querySelector('.delete');
+        const reportOption = menu.querySelector('.report');
         
-        // Only show delete for own messages
+        // Show delete only for own messages
         deleteOption.style.display = message.userId === currentUser.uid ? 'flex' : 'none';
+        
+        // Show report only for others' messages
+        reportOption.style.display = message.userId !== currentUser.uid ? 'flex' : 'none';
         
         // Position menu
         const x = event.type.includes('touch') ? event.touches[0].clientX : event.clientX;
@@ -1068,6 +1180,12 @@ document.addEventListener('DOMContentLoaded', function() {
         menu.style.top = `${y}px`;
         menu.classList.add('active');
         
+        // Update click handlers
+        menu.querySelector('.report')?.addEventListener('click', () => {
+            window.location.href = `report.html?messageId=${messageId}`;
+            menu.classList.remove('active');
+        });
+
         // Add action handlers
         menu.querySelector('.copy').onclick = () => {
             navigator.clipboard.writeText(message.text);
@@ -1462,6 +1580,106 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Initial resize
             autoResize();
+
+            // Add command handling
+            messageInput.addEventListener('input', () => {
+                const value = messageInput.value;
+                if (value.startsWith('/')) {
+                    const suggestions = getSuggestions(value);
+                    showCommandSuggestions(suggestions);
+                } else {
+                    hideCommandSuggestions();
+                }
+            });
+
+            messageInput.addEventListener('keydown', async (e) => {
+                if (e.key === 'Enter' && !e.shiftKey && messageInput.value.trim()) {
+                    e.preventDefault();
+                    const value = messageInput.value.trim();
+                    
+                    if (value.startsWith('/')) {
+                        const [cmd, ...args] = value.slice(1).split(' ');
+                        const result = await executeCommand(cmd, args.join(' '));
+                        if (result) {
+                            await sendCommandMessage(result);
+                            messageInput.value = '';
+                            hideCommandSuggestions();
+                        }
+                        return;
+                    }
+                    sendMessage();
+                }
+
+                // Add Tab handling for command completion
+                if (e.key === 'Tab' && !e.shiftKey && messageInput.value.startsWith('/')) {
+                    e.preventDefault();
+                    const selected = document.querySelector('.command-suggestion.selected') ||
+                                   document.querySelector('.command-suggestion');
+                    if (selected) {
+                        const command = selected.dataset.command;
+                        messageInput.value = `/${command} `;
+                        hideCommandSuggestions();
+                    }
+                }
+
+                // Add up/down navigation for suggestions
+                if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && messageInput.value.startsWith('/')) {
+                    e.preventDefault();
+                    const suggestions = document.querySelectorAll('.command-suggestion');
+                    const selected = document.querySelector('.command-suggestion.selected');
+                    let nextIndex = 0;
+
+                    if (selected) {
+                        const currentIndex = Array.from(suggestions).indexOf(selected);
+                        selected.classList.remove('selected');
+                        nextIndex = e.key === 'ArrowUp' 
+                            ? (currentIndex - 1 + suggestions.length) % suggestions.length
+                            : (currentIndex + 1) % suggestions.length;
+                    }
+
+                    suggestions[nextIndex].classList.add('selected');
+                }
+            });
+
+            function showCommandSuggestions(suggestions) {
+                let container = document.querySelector('.command-suggestions');
+                if (!container) {
+                    container = document.createElement('div');
+                    container.className = 'command-suggestions';
+                    document.querySelector('.message-input').prepend(container);
+                }
+                
+                if (suggestions.length === 0) {
+                    container.classList.remove('active');
+                    return;
+                }
+                
+                container.innerHTML = suggestions
+                    .map(cmd => `
+                        <div class="command-suggestion" data-command="${cmd.name}">
+                            <span class="name">/${cmd.name}</span>
+                            <span class="description">${cmd.description}</span>
+                        </div>
+                    `).join('');
+                
+                // Add click handlers to suggestions
+                container.querySelectorAll('.command-suggestion').forEach(suggestion => {
+                    suggestion.addEventListener('click', () => {
+                        const command = suggestion.dataset.command;
+                        messageInput.value = `/${command} `;
+                        messageInput.focus();
+                        hideCommandSuggestions();
+                    });
+
+                    suggestion.addEventListener('mouseenter', () => {
+                        container.querySelector('.selected')?.classList.remove('selected');
+                        suggestion.classList.add('selected');
+                    });
+                });
+                
+                container.classList.add('active');
+                container.querySelector('.command-suggestion')?.classList.add('selected');
+            }
         }
 
         // Initialize message input
@@ -1469,75 +1687,193 @@ document.addEventListener('DOMContentLoaded', function() {
         setupEffectSelector();
     }
 
-    // Update startChat function to properly handle navigation
-    async function startChat(userId) {
-        try {
-            showLoading();
-            const otherUser = await db.collection('users').doc(userId).get();
-            if (!otherUser.exists) {
-                hideLoading();
-                return;
-            }
-
-            const userData = otherUser.data();
-            const chatId = [currentUser.uid, userId].sort().join('_');
-            currentChats.add(chatId); // Add this line
-            
-            // Set current chat and load messages
-            currentChat = chatId;
-            loadMessages(chatId);
-            updateMessageInputState(true);
-
-            // Update typing reference for new chat
-            typingRef = db.collection('typing').doc(chatId);
-            
-            // Listen for typing status
-            typingRef.onSnapshot((doc) => {
-                const data = doc.data() || {};
-                const isTyping = data[userId]?.typing;
-                updateTypingIndicator(isTyping);
+    // Add command UI functions
+    function showCommandSuggestions(suggestions) {
+        let container = document.querySelector('.command-suggestions');
+        if (!container) {
+            container = document.createElement('div');
+            container.className = 'command-suggestions';
+            document.querySelector('.message-input').prepend(container);
+        }
+        
+        if (suggestions.length === 0) {
+            container.classList.remove('active');
+            return;
+        }
+        
+        container.innerHTML = suggestions
+            .map(cmd => `
+                <div class="command-suggestion" data-command="${cmd.name}">
+                    <span class="name">/${cmd.name}</span>
+                    <span class="description">${cmd.description}</span>
+                </div>
+            `).join('');
+        
+        // Add click handlers to suggestions
+        container.querySelectorAll('.command-suggestion').forEach(suggestion => {
+            suggestion.addEventListener('click', () => {
+                const command = suggestion.dataset.command;
+                messageInput.value = `/${command} `;
+                messageInput.focus();
+                hideCommandSuggestions();
             });
 
-            // Update chat header
-            const chatHeader = document.querySelector('.chat-header .user-info');
-            if (chatHeader) {
-                chatHeader.innerHTML = `
-                    <div class="avatar-container">
-                        <img src="${userData.photoURL || defaultAvatar}" alt="${userData.email}" class="avatar">
-                        <span class="status-indicator ${userData.status === 'online' ? 'online' : ''}"></span>
-                    </div>
-                    <div class="user-details">
-                        <span class="username">${userData.displayName || userData.email}</span>
-                        <span class="status ${userData.status === 'online' ? 'online' : ''}">
-                            <i class="${userData.status === 'online' ? 'ri-checkbox-blank-circle-fill' : 'ri-time-line'}"></i>
-                            ${userData.status === 'online' ? 'Online' : 'Last seen ' + formatLastSeen(userData.lastSeen?.toDate())}
-                        </span>
-                    </div>
-                `;
+            suggestion.addEventListener('mouseenter', () => {
+                container.querySelector('.selected')?.classList.remove('selected');
+                suggestion.classList.add('selected');
+            });
+        });
+        
+        container.classList.add('active');
+        container.querySelector('.command-suggestion')?.classList.add('selected');
+    }
+
+    function hideCommandSuggestions() {
+        const container = document.querySelector('.command-suggestions');
+        if (container) {
+            container.classList.remove('active');
+        }
+    }
+
+    // Add command message sending
+    async function sendCommandMessage(result) {
+        const messageData = {
+            type: result.type,
+            text: result.text,
+            userId: currentUser.uid,
+            chatId: currentChat,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+            ...result
+        };
+        
+        await db.collection('messages').add(messageData);
+    }
+
+    // Update startChat function to properly handle navigation
+    async function startChat(targetId) {
+        try {
+            showLoading();
+            isGroupChat = targetId.startsWith('group_');
+
+            // Verify chat access
+            if (isGroupChat) {
+                const groupDoc = await db.collection('groups').doc(targetId).get();
+                if (!groupDoc.exists || !groupDoc.data().members.includes(currentUser.uid)) {
+                    hideLoading();
+                    return; // Silently fail and stay on current chat
+                }
+            } else {
+                // For 1:1 chats, verify targetId exists and isn't current user
+                if (targetId === currentUser.uid) {
+                    hideLoading();
+                    return;
+                }
+                const userDoc = await db.collection('users').doc(targetId).get();
+                if (!userDoc.exists) {
+                    hideLoading();
+                    return;
+                }
             }
 
-            // Update active state in contacts list
-            document.querySelectorAll('.contact').forEach(el => el.classList.remove('active'));
-            const contactElement = Array.from(document.querySelectorAll('.contact')).find(el => 
-                el.dataset.userId === userId);
-            if (contactElement) {
-                contactElement.classList.add('active');
-            }
+            // Update URL without page reload
+            const url = new URL(window.location);
+            url.searchParams.set('chat', targetId);
+            window.history.pushState({}, '', url);
 
-            // Clear welcome screen
-            const messageArea = document.getElementById('messageArea');
-            const welcomeScreen = messageArea.querySelector('.welcome-screen');
-            if (welcomeScreen) {
-                welcomeScreen.remove();
-            }
+            if (isGroupChat) {
+                const groupDoc = await db.collection('groups').doc(targetId).get();
+                if (!groupDoc.exists) {
+                    hideLoading();
+                    return;
+                }
 
-            // On mobile, close the sidebar
-            if (window.innerWidth < 768) {
+                const groupData = groupDoc.data();
+                currentChat = targetId; // Use group ID directly
+                loadMessages(currentChat);
+                updateMessageInputState(true);
+
+                // Update chat header for group
+                const chatHeader = document.querySelector('.chat-header .user-info');
+                if (chatHeader) {
+                    chatHeader.innerHTML = `
+                        <div class="avatar-container">
+                            <div class="group-avatar">${groupData.name[0].toUpperCase()}</div>
+                        </div>
+                        <div class="user-details">
+                            <span class="username">${groupData.name}</span>
+                            <span class="status">
+                                <i class="ri-group-line"></i>
+                                ${groupData.members.length} members
+                            </span>
+                        </div>
+                    `;
+                }
+            } else {
+                // Regular 1:1 chat logic
+                const otherUser = await db.collection('users').doc(targetId).get();
+                if (!otherUser.exists) {
+                    hideLoading();
+                    return;
+                }
+
+                const userData = otherUser.data();
+                const combinedChatId = [currentUser.uid, targetId].sort().join('_');
+                currentChats.add(combinedChatId);
+                
+                currentChat = combinedChatId;
+                loadMessages(currentChat);
+                updateMessageInputState(true);
+
+                typingRef = db.collection('typing').doc(currentChat);
+                
+                // Update typing listener
+                typingRef.onSnapshot((doc) => {
+                    const data = doc.data() || {};
+                    const isTyping = data[targetId]?.typing;
+                    updateTypingIndicator(isTyping);
+                });
+
+                // Update chat header
+                const chatHeader = document.querySelector('.chat-header .user-info');
+                if (chatHeader) {
+                    chatHeader.innerHTML = `
+                        <div class="avatar-container">
+                            <img src="${userData.photoURL || defaultAvatar}" alt="${userData.email}" class="avatar">
+                            <span class="status-indicator ${userData.status === 'online' ? 'online' : ''}"></span>
+                        </div>
+                        <div class="user-details">
+                            <span class="username">${userData.displayName || userData.email}</span>
+                            <span class="status ${userData.status === 'online' ? 'online' : ''}">
+                                <i class="${userData.status === 'online' ? 'ri-checkbox-blank-circle-fill' : 'ri-time-line'}"></i>
+                                ${userData.status === 'online' ? 'Online' : 'Last seen ' + formatLastSeen(userData.lastSeen?.toDate())}
+                            </span>
+                        </div>
+                    `;
+                }
+
+                // Update active state in contacts list
+                document.querySelectorAll('.contact').forEach(el => el.classList.remove('active'));
+                const contactElement = Array.from(document.querySelectorAll('.contact')).find(el => 
+                    el.dataset.userId === targetId);
+                if (contactElement) {
+                    contactElement.classList.add('active');
+                }
+
+                // Clear welcome screen
+                const messageArea = document.getElementById('messageArea');
+                const welcomeScreen = messageArea.querySelector('.welcome-screen');
+                if (welcomeScreen) {
+                    welcomeScreen.remove();
+                }
+
+                // On mobile, close the sidebar
+                if (window.innerWidth < 768) {
+                    contactsSidebar.classList.remove('active');
+                }
+
+                // Close the sidebar on both mobile and desktop
                 contactsSidebar.classList.remove('active');
             }
-
-            // Close the sidebar on both mobile and desktop
-            contactsSidebar.classList.remove('active');
 
             hideLoading();
         } catch (error) {
@@ -1634,6 +1970,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Move updateUnreadCounts after currentChats is set
             await updateUnreadCounts();
+
+            // Add groups
+            const groupsQuery = await db.collection('groups')
+                .where('members', 'array-contains', currentUser.uid)
+                .get();
+
+            groupsQuery.forEach(doc => {
+                const groupData = doc.data();
+                addGroupToList(groupData, doc.id);
+            });
         } catch (error) {
             console.error("Error loading recent contacts:", error);
             // Show empty state on error
@@ -1641,6 +1987,29 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.querySelector('.no-chats').style.display = 'flex';
             }
         }
+    }
+
+    // Add function to display groups in contact list
+    function addGroupToList(groupData, groupId) {
+        const contactDiv = document.createElement('div');
+        contactDiv.className = 'contact group';
+        contactDiv.dataset.groupId = groupId;
+        
+        contactDiv.innerHTML = `
+            <div class="avatar-container">
+                <div class="group-avatar">${groupData.name[0].toUpperCase()}</div>
+            </div>
+            <div class="contact-info">
+                <div class="contact-header">
+                    <span class="contact-name">${groupData.name}</span>
+                    <span class="member-count">${groupData.members.length}</span>
+                </div>
+                <span class="last-message">Group Chat</span>
+            </div>
+        `;
+        
+        contactDiv.onclick = () => startChat(groupId);
+        document.querySelector('.contacts-list').appendChild(contactDiv);
     }
 
     // Add click-outside handler for search pane
@@ -2191,4 +2560,229 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Initialize voice recording when chat loads
     setupVoiceRecording();
+});
+// Add effect handling functions
+function playEffect(messageEl, effect, seed) {
+    messageEl.style.animation = 'none';
+    messageEl.offsetHeight; // Trigger reflow
+    
+    // Add seed-based randomization for effects
+    if (seed) {
+        const random = getRandomForSeed(seed);
+        messageEl.style.setProperty('--random-offset', `${random * 360}deg`);
+    }
+    
+    messageEl.classList.add(`effect-${effect}`);
+}
+
+function replayEffect(messageEl) {
+    const effect = Array.from(messageEl.classList)
+        .find(c => c.startsWith('effect-'))?.replace('effect-', '');
+    
+    if (effect) {
+        const seed = messageEl.dataset.seed;
+        playEffect(messageEl, effect, seed);
+    }
+}
+
+// Add seeded random function (same as in commands.js)
+function getRandomForSeed(seed) {
+    const x = Math.sin(seed) * 10000;
+    return x - Math.floor(x);
+}
+
+// Handle browser back/forward
+window.addEventListener('popstate', () => {
+    const chatId = getChatIdFromUrl();
+    if (chatId) {
+        startChat(chatId);
+    }
+});
+
+// Add character counter
+function setupCharCounter(textarea) {
+    const counter = document.createElement('div');
+    counter.className = 'char-counter';
+    textarea.parentElement.appendChild(counter);
+
+    function updateCounter() {
+        const remaining = 2000 - textarea.value.length;
+        counter.textContent = `${remaining}`;
+        counter.className = 'char-counter' + 
+            (remaining < 100 ? 'near-limit' : '') +
+            (remaining < 20 ? 'at-limit' : '');
+    }
+
+    textarea.addEventListener('input', updateCounter);
+    updateCounter();
+}
+
+// Add connection status monitoring
+function setupConnectionMonitoring() {
+    const statusBar = document.createElement('div');
+    statusBar.className = 'connection-status';
+    statusBar.textContent = 'Connection lost. Reconnecting...';
+    document.body.appendChild(statusBar);
+
+    window.addEventListener('online', () => {
+        statusBar.classList.remove('visible');
+        location.reload();
+    });
+
+    window.addEventListener('offline', () => {
+        statusBar.classList.add('visible');
+    });
+}
+
+// Add paste image handling
+function setupPasteHandler(textarea) {
+    textarea.addEventListener('paste', async (e) => {
+        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+        
+        for (let item of items) {
+            if (item.type.indexOf('image') === 0) {
+                e.preventDefault();
+                const file = item.getAsFile();
+                await handleImageUpload(file);
+                break;
+            }
+        }
+    });
+}
+
+// Add mobile gesture hints
+function showGestureHint(text, duration = 3000) {
+    const hint = document.createElement('div');
+    hint.className = 'gesture-hint';
+    hint.textContent = text;
+    document.body.appendChild(hint);
+
+    requestAnimationFrame(() => hint.classList.add('visible'));
+    setTimeout(() => {
+        hint.classList.remove('visible');
+        setTimeout(() => hint.remove(), 300);
+    }, duration);
+}
+
+// Add loading skeletons
+function showContactSkeletons() {
+    const contactsList = document.querySelector('.contacts-list');
+    contactsList.innerHTML = Array(5).fill(0)
+        .map(() => '<div class="contact-skeleton"></div>')
+        .join('');
+}
+
+// Initialize all new features
+function initializeEnhancements() {
+    const textarea = document.querySelector('.message-input textarea');
+    if (textarea) {
+        setupCharCounter(textarea);
+        setupPasteHandler(textarea);
+    }
+    
+    setupConnectionMonitoring();
+    
+    // Show gesture hint on first visit
+    if (!localStorage.getItem('gestureHintShown')) {
+        showGestureHint('Swipe messages right to reply');
+        localStorage.setItem('gestureHintShown', 'true');
+    }
+}
+
+// Call initialization
+document.addEventListener('DOMContentLoaded', initializeEnhancements);
+
+// Fix textarea auto-resize
+function autoResizeTextarea(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = (textarea.scrollHeight) + 'px';
+}
+
+// Add edit option to context menu
+const contextMenu = document.querySelector('.message-context-menu');
+if (contextMenu) {
+    const editOption = document.createElement('div');
+    editOption.className = 'context-menu-item edit';
+    editOption.innerHTML = '<i class="ri-edit-line"></i>Edit';
+    editOption.onclick = () => {
+        const messageId = contextMenu.dataset.messageId;
+        const messageEl = document.getElementById(messageId);
+        if (messageEl) {
+            startEdit(messageEl, {id: messageId, text: messageEl.querySelector('.message-content').textContent});
+        }
+        contextMenu.classList.remove('active');
+    };
+    contextMenu.insertBefore(editOption, contextMenu.querySelector('.delete'));
+}
+
+function startEdit(messageEl, message) {
+    messageEl.classList.add('editing');
+    const content = messageEl.querySelector('.message-content');
+    const originalText = content.textContent;
+    
+    content.innerHTML = `
+        <textarea class="message-edit-input">${originalText}</textarea>
+        <div class="edit-actions">
+            <button class="save">Save</button>
+            <button class="cancel">Cancel</button>
+        </div>
+    `;
+
+    const textarea = content.querySelector('textarea');
+    const saveBtn = content.querySelector('.save');
+    const cancelBtn = content.querySelector('.cancel');
+
+    textarea.focus();
+    autoResize(textarea);
+
+    saveBtn.onclick = async () => {
+        const newText = textarea.value.trim();
+        if (newText && newText !== originalText) {
+            try {
+                await db.collection('messages').doc(message.id).update({
+                    text: newText,
+                    edited: true,
+                    editedAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            } catch (error) {
+                console.error('Error updating message:', error);
+            }
+        }
+        messageEl.classList.remove('editing');
+    };
+
+    cancelBtn.onclick = () => {
+        messageEl.classList.remove('editing');
+        content.textContent = originalText;
+    };
+}
+
+// Add network monitoring
+function setupNetworkMonitoring() {
+    const statusBar = document.createElement('div');
+    statusBar.className = 'network-status';
+    document.body.appendChild(statusBar);
+
+    window.addEventListener('online', () => {
+        statusBar.textContent = 'Reconnecting...';
+        statusBar.className = 'network-status reconnecting';
+        // Attempt to reconnect to Firebase
+        db.enableNetwork().then(() => {
+            statusBar.className = 'network-status';
+            // Refresh messages
+            if (currentChat) {
+                loadMessages(currentChat);
+            }
+        });
+    });
+
+    window.addEventListener('offline', () => {
+        statusBar.textContent = 'You are offline';
+        statusBar.className = 'network-status offline';
+    });
+}
+
+// Add to initialization
+document.addEventListener('DOMContentLoaded', () => {
+    setupNetworkMonitoring();
 });

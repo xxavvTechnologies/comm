@@ -40,7 +40,7 @@
     <meta property="og:title" content="Nova Comm - Instant Messaging">
     <meta property="og:description" content="Connect instantly and chat seamlessly with Nova Comm's real-time messaging platform.">
     <meta property="og:image" content="https://d2zcpib8duehag.cloudfront.net/Nova%20Comm.png">
-    <meta property="og:url" content="https://com.nova.xxavvgroup.com">
+    <meta property="og:url" content="https://comm.novasuite.one">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:site" content="@xxavvtech">
     
@@ -77,8 +77,9 @@
     </script>
     <!-- Initialize Firebase first -->
     <script src="js/firebase-config.js"></script>
-    <!-- Then load app logic -->
-    <script src="js/chat.js"></script>
+    <script src="js/eventBus.js"></script>
+    <script type="module" src="js/commands.js"></script>
+    <script type="module" src="js/chat.js"></script>
     <script src="js/notification-tester.js"></script>
     <link rel="manifest" href="manifest.json">
 </head>
@@ -130,14 +131,26 @@
                 </button>
                 <div class="search-input-wrapper">
                     <i class="ri-search-line"></i>
-                    <input type="search" placeholder="Enter email address..." id="userSearchInput" autocomplete="off">
+                    <input type="search" placeholder="Search by email..." id="userSearchInput" autocomplete="off">
+                </div>
+            </div>
+            <div class="search-options">
+                <label class="group-toggle">
+                    <input type="checkbox" id="groupToggle">
+                    <span>Create Group</span>
+                </label>
+                <div class="group-name-input" style="display: none">
+                    <input type="text" id="groupNameInput" placeholder="Group name" maxlength="30">
                 </div>
             </div>
             <div class="search-results" id="searchResults">
                 <div class="search-instructions">
                     <i class="ri-mail-line"></i>
-                    <p>Enter a complete email address to find users</p>
+                    <p>Enter email to find users</p>
                 </div>
+            </div>
+            <div class="group-create-footer" style="display: none">
+                <button id="createGroupBtn" disabled>Create Group</button>
             </div>
         </div>
 

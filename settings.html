@@ -10,6 +10,7 @@
     <link rel="icon" type="image/x-icon" href="https://d2zcpib8duehag.cloudfront.net/Nova%20Comm.png">
     <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/pages.css">
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -45,6 +46,18 @@
                             <label for="email">Email</label>
                             <input type="email" id="email" disabled>
                         </div>
+                    </div>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <span>Share Code</span>
+                        <span class="setting-description">Share this code to let others find you</span>
+                    </div>
+                    <div class="share-code-container">
+                        <input type="text" id="shareCode" readonly>
+                        <button id="copyShareCode">
+                            <i class="ri-file-copy-line"></i>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -95,6 +108,38 @@
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
+            </div>
+
+            <div class="settings-section">
+                <h2>Help & Support</h2>
+                <a href="account-status.html" class="menu-item">
+                    <i class="ri-shield-check-line"></i>
+                    <div class="menu-item-content">
+                        <span>Account Status</span>
+                        <span class="menu-item-description">View your account standing and warning history</span>
+                    </div>
+                </a>
+                <a href="support.html" class="menu-item">
+                    <i class="ri-customer-service-line"></i>
+                    <div class="menu-item-content">
+                        <span>Support</span>
+                        <span class="menu-item-description">Get help with Nova Comm</span>
+                    </div>
+                </a>
+                <a href="feedback.html" class="menu-item">
+                    <i class="ri-feedback-line"></i>
+                    <div class="menu-item-content">
+                        <span>Feedback</span>
+                        <span class="menu-item-description">Share your thoughts</span>
+                    </div>
+                </a>
+                <a href="report.html" class="menu-item">
+                    <i class="ri-flag-line"></i>
+                    <div class="menu-item-content">
+                        <span>Report</span>
+                        <span class="menu-item-description">Report a user or message</span>
+                    </div>
+                </a>
             </div>
 
             <div class="settings-section danger-zone">

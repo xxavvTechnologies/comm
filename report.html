@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Nova Comm - Report</title>
+    <link rel="icon" type="image/x-icon" href="https://d2zcpib8duehag.cloudfront.net/Nova%20Comm.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/stylec.css">
+    <link rel="stylesheet" href="css/pages.css">
+    <link rel="stylesheet" href="css/support-pages.css">
+    
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    
+    <!-- Initialize Firebase first -->
+    <script src="js/firebase-config.js"></script>
+    
+    <!-- App scripts -->
+    <script src="js/report.js"></script>
+</head>
+<body>
+    <div class="page-container">
+        <header class="page-header">
+            <a href="chat.html" class="back-btn"><i class="ri-arrow-left-line"></i></a>
+            <h1>Report</h1>
+        </header>
+        <main>
+            <section class="report-section">
+                <h2>Report User or Message</h2>
+                <form id="reportForm">
+                    <div class="search-section hidden" id="userSearch">
+                        <div class="form-group">
+                            <label>Search User by Email</label>
+                            <div class="search-input-wrapper">
+                                <i class="ri-search-line"></i>
+                                <input type="email" id="userSearchInput" placeholder="Enter user email">
+                            </div>
+                        </div>
+                        <div class="search-results" id="userSearchResults">
+                            <!-- Results populated by JS -->
+                        </div>
+                    </div>
+
+                    <div class="message-preview hidden" id="messagePreview">
+                        <h3>Message Preview</h3>
+                        <div class="preview-content"></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="reportType">What are you reporting?</label>
+                        <select id="reportType" required>
+                            <option value="">Select type</option>
+                            <option value="user">User</option>
+                            <option value="message">Message</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="reportReason">Reason</label>
+                        <select id="reportReason" required>
+                            <option value="spam">Spam</option>
+                            <option value="harassment">Harassment</option>
+                            <option value="inappropriate">Inappropriate Content</option>
+                            <option value="impersonation">Impersonation</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="reportDetails">Additional Details</label>
+                        <textarea id="reportDetails" rows="4" required></textarea>
+                    </div>
+                    <button type="submit" class="primary-button">Submit Report</button>
+                </form>
+            </section>
+        </main>
+    </div>
+</body>
+</html>

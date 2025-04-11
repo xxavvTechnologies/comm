@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Nova Comm - Account Status</title>
+    <link rel="icon" type="image/x-icon" href="https://d2zcpib8duehag.cloudfront.net/Nova%20Comm.png">
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/pages.css">
+    <link rel="stylesheet" href="css/account-status.css">
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/account-status.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <button onclick="history.back()" class="back-button">
+                <i class="ri-arrow-left-line"></i>
+                <span>Back</span>
+            </button>
+            <h1>Account Status</h1>
+        </div>
+
+        <div class="status-content">
+            <div class="status-overview">
+                <div class="status-indicator" id="statusIndicator">
+                    <i class="ri-shield-check-line"></i>
+                    <span class="status-text">Checking status...</span>
+                </div>
+            </div>
+
+            <div class="warning-history">
+                <h2>Warning History</h2>
+                <div id="warningsList" class="warnings-list">
+                    <div class="loading">Loading history...</div>
+                </div>
+            </div>
+
+            <div class="status-info">
+                <h2>Account Standing Process</h2>
+                <div class="standing-steps">
+                    <div class="step">
+                        <div class="step-number">1</div>
+                        <div class="step-info">
+                            <h3>First Warning</h3>
+                            <p>Initial warning for policy violation</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">2</div>
+                        <div class="step-info">
+                            <h3>Second Warning</h3>
+                            <p>Further violation of community guidelines</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div class="step-info">
+                            <h3>Final Warning</h3>
+                            <p>Last warning before suspension</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">4</div>
+                        <div class="step-info">
+                            <h3>Temporary Suspension</h3>
+                            <p>24-hour account suspension</p>
+                        </div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">5</div>
+                        <div class="step-info">
+                            <h3>Permanent Ban</h3>
+                            <p>Account permanently banned</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
