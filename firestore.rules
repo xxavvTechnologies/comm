@@ -56,6 +56,32 @@ service cloud.firestore {
         data.username is string &&
         data.createdAt is timestamp;
     }
+
+    // Helper function for validating user preferences
+    function isValidPreferences() {
+      let data = request.resource.data;
+      return data.notifications is map;
+    }
+
+    // Helper function for validating activity logs
+    function isValidActivity() {
+      let data = request.resource.data;
+      return 
+        data.keys().hasAll(['type', 'deviceInfo', 'timestamp']) &&
+        data.deviceInfo is map &&
+        data.timestamp is timestamp;
+    }
+
+    // Helper function for validating connected apps
+    function isValidApp() {
+      let data = request.resource.data;
+      return 
+        data.keys().hasAll(['name', 'iconUrl', 'connectedAt', 'userId']) &&
+        data.name is string &&
+        data.iconUrl is string &&
+        data.connectedAt is timestamp &&
+        data.userId == request.auth.uid;
+    }
     
     // Posts collection
     match /posts/{postId} {
@@ -264,7 +290,61 @@ service cloud.firestore {
     // User preferences collection
     match /userPreferences/{userId} {
       allow read: if isOwner(userId);
-      allow write: if isOwner(userId);
+      allow write: if isOwner(userId) && isValidPreferences();
+    }
+
+    // User activity collection
+    match /userActivity/{activityId} {
+      allow read: if request.auth != null && 
+                 resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && 
+                   request.resource.data.userId == request.auth.uid &&
+                   isValidActivity();
+      allow delete: if false;
+      allow update: if false;
+    }
+
+    // Connected apps collection
+    match /userApps/{appId} {
+      allow read: if request.auth != null && 
+                 resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && isValidApp();
+      allow delete: if request.auth != null && 
+                   resource.data.userId == request.auth.uid;
+      allow update: if false;
+    }
+
+    // Login attempts collection
+    match /loginAttempts/{attemptId} {
+      allow read: if request.auth != null && 
+                 resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && 
+                   request.resource.data.userId == request.auth.uid &&
+                   request.resource.data.keys().hasAll(['success', 'timestamp', 'deviceInfo']);
+      allow delete: if false;
+      allow update: if false;
+    }
+
+    // Sessions collection
+    match /sessions/{sessionId} {
+      allow read: if request.auth != null && 
+                 resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && 
+                   request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null && 
+                   resource.data.userId == request.auth.uid &&
+                   request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastActivity']);
+      allow delete: if request.auth != null && 
+                   resource.data.userId == request.auth.uid;
+    }
+
+    // Activity logs collection
+    match /activityLogs/{logId} {
+      allow read: if request.auth != null && 
+                 resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && 
+                   request.resource.data.userId == request.auth.uid;
+      allow delete, update: if false;
     }
 
     // Document statistics collection
@@ -425,6 +505,43 @@ service cloud.firestore {
       allow read: if isAuthenticated() && 
                  (resource.data.userId == request.auth.uid || isAdmin());
       allow create, update, delete: if isAdmin();
+    }
+
+    // Presentations collection
+    match /presentations/{presentationId} {
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+    // Channels collection
+    match /channels/{channelId} {
+      // Helper function for public channel access
+      function isPublicChannel() {
+        return resource.data.isPublic == true;
+      }
+      
+      allow read: if isAuthenticated() && 
+                 (resource.data.members.hasAny([request.auth.uid]) || isPublicChannel());
+      
+      allow list: if isAuthenticated(); // Allow querying to find public channels
+      
+      allow create: if isAuthenticated() && 
+                   request.resource.data.creator == request.auth.uid &&
+                   request.resource.data.members.hasAny([request.auth.uid]);
+      
+      allow update: if isAuthenticated() &&
+                   (
+                     resource.data.creator == request.auth.uid ||
+                     (
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberCount']) &&
+                       (resource.data.isPublic == true || resource.data.members.hasAny([request.auth.uid]))
+                     )
+                   );
+      
+      allow delete: if isAuthenticated() &&
+                   resource.data.creator == request.auth.uid;
     }
   }
 }

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nova Comm - Channels</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/channels.css">
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js"></script>
+    <script src="js/channels.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <aside class="channels-sidebar">
+            <div class="channels-header">
+                <!-- Add menu toggle button -->
+                <div class="mobile-nav">
+                    <button class="channel-menu-toggle" id="channelMenuToggle">
+                        <i class="ri-menu-line"></i>
+                    </button>
+                    <h2>Channels</h2>
+                </div>
+                <div class="header-actions">
+                    <button id="discoverBtn" class="action-btn" title="Discover Channels">
+                        <i class="ri-compass-3-line"></i>
+                    </button>
+                    <button id="createChannelBtn" class="action-btn" title="Create Channel">
+                        <i class="ri-add-line"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="channels-sections">
+                <div class="section">
+                    <h3>Your Channels</h3>
+                    <div class="channels-list" id="ownedChannelsList"></div>
+                </div>
+                <div class="section">
+                    <h3>Joined Channels</h3>
+                    <div class="channels-list" id="joinedChannelsList"></div>
+                </div>
+            </div>
+        </aside>
+        <main class="channel-content">
+            <div class="chat-header">
+                <div class="channel-info">
+                    <h3 id="currentChannelName">Select a channel</h3>
+                    <span id="memberCount" class="member-count"></span>
+                    <button class="channel-info-btn" id="channelInfoBtn">
+                        <i class="ri-information-line"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="messages" id="messageArea">
+                <div class="welcome-screen">
+                    <h1>Welcome to Channels</h1>
+                    <p>Select a channel to start chatting or create a new one.</p>
+                </div>
+            </div>
+            <div class="message-input">
+                <div class="message-input-container">
+                    <textarea 
+                        placeholder="Type a message..." 
+                        rows="1"
+                        maxlength="2000"
+                        data-min-rows="1"
+                        data-max-rows="6"
+                        disabled
+                    ></textarea>
+                    <button class="send-message" disabled>
+                        <i class="ri-send-plane-fill"></i>
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Channel Discovery Modal -->
+    <div id="discoveryModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Discover Channels</h2>
+                <button class="close-modal">
+                    <i class="ri-close-line"></i>
+                </button>
+            </div>
+            <div class="modal-search">
+                <input type="text" id="channelSearch" placeholder="Search public channels...">
+            </div>
+            <div class="channels-grid" id="publicChannelsList">
+                <!-- Public channels will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Channel Modal -->
+    <div id="createChannelModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Create Channel</h2>
+                <button class="close-modal">
+                    <i class="ri-close-line"></i>
+                </button>
+            </div>
+            <form id="createChannelForm">
+                <div class="form-group">
+                    <label for="channelName">Channel Name</label>
+                    <input type="text" id="channelName" required maxlength="30">
+                </div>
+                <div class="form-group">
+                    <label for="channelDescription">Description (optional)</label>
+                    <textarea id="channelDescription" maxlength="200"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="isPublic">
+                        Make this channel public
+                    </label>
+                </div>
+                <button type="submit" class="primary-button">Create Channel</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Channel Info Modal -->
+    <div class="channel-info-modal" id="channelInfoModal">
+        <div class="channel-info-content">
+            <div class="channel-info-header">
+                <h2></h2>
+                <button class="modal-close">
+                    <i class="ri-close-line"></i>
+                </button>
+            </div>
+            <div class="channel-info-meta">
+                <p><i class="ri-calendar-line"></i> Created on <span class="channel-created"></span></p>
+                <p><i class="ri-group-line"></i> <span class="channel-member-count"></span> members</p>
+            </div>
+            <div class="channel-members">
+                <h3>Members</h3>
+                <div class="member-list"></div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

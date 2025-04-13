@@ -584,51 +584,64 @@ document.addEventListener('DOMContentLoaded', function() {
                 messageArea.innerHTML = '';
             }
 
-            // Set up real-time listener
-            messageUnsubscribe = db.collection('messages')
-                .where('chatId', '==', chatId)
-                .orderBy('timestamp', 'asc')  // Changed to ascending order
-                .onSnapshot((snapshot) => {
-                    const unreadMessages = [];
-                    
-                    snapshot.docChanges().forEach((change) => {
-                        if (change.type === 'added') {
-                            const message = change.doc.data();
-                            const messageId = change.doc.id;
-                            
-                            // Collect unread messages
-                            if (message.userId !== currentUser.uid && 
-                                !message.readBy?.includes(currentUser.uid)) {
-                                unreadMessages.push(messageId);
-                            }
-                            
-                            if (!document.getElementById(messageId)) {
-                                displayMessage(message, messageId);
-                            }
-                        }
-                        if (change.type === 'modified') {
-                            const messageEl = document.getElementById(change.doc.id);
-                            const messageData = change.doc.data();
-                            if (messageEl && messageData) {
-                                updateReadReceipt(messageEl, messageData);
-                            }
-                        }
-                    });
+            // Determine if this is a channel or direct chat
+            const isChannel = chatId.startsWith('channel_');
+            let query;
 
-                    // Batch update read status for unread messages
-                    if (unreadMessages.length > 0) {
-                        // Split into smaller batches if needed
-                        while (unreadMessages.length) {
-                            const batch = unreadMessages.splice(0, 10);
-                            batch.forEach(messageId => updateReadStatus(messageId));
+            if (isChannel) {
+                // For channels, load all messages
+                query = db.collection('messages')
+                    .where('channelId', '==', chatId.replace('channel_', ''))
+                    .orderBy('timestamp', 'asc');
+            } else {
+                // For direct chats, use existing logic
+                query = db.collection('messages')
+                    .where('chatId', '==', chatId)
+                    .orderBy('timestamp', 'asc');
+            }
+
+            // Set up real-time listener
+            messageUnsubscribe = query.onSnapshot((snapshot) => {
+                const unreadMessages = [];
+                
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === 'added') {
+                        const message = change.doc.data();
+                        const messageId = change.doc.id;
+                        
+                        // Collect unread messages
+                        if (message.userId !== currentUser.uid && 
+                            !message.readBy?.includes(currentUser.uid)) {
+                            unreadMessages.push(messageId);
+                        }
+                        
+                        if (!document.getElementById(messageId)) {
+                            displayMessage(message, messageId);
                         }
                     }
-                    
-                    // Scroll to bottom after new messages
-                    if (messageArea) {
-                        messageArea.scrollTop = messageArea.scrollHeight;
+                    if (change.type === 'modified') {
+                        const messageEl = document.getElementById(change.doc.id);
+                        const messageData = change.doc.data();
+                        if (messageEl && messageData) {
+                            updateReadReceipt(messageEl, messageData);
+                        }
                     }
                 });
+
+                // Batch update read status for unread messages
+                if (unreadMessages.length > 0) {
+                    // Split into smaller batches if needed
+                    while (unreadMessages.length) {
+                        const batch = unreadMessages.splice(0, 10);
+                        batch.forEach(messageId => updateReadStatus(messageId));
+                    }
+                }
+                
+                // Scroll to bottom after new messages
+                if (messageArea) {
+                    messageArea.scrollTop = messageArea.scrollHeight;
+                }
+            });
 
         } catch (error) {
             console.error("Error in loadMessages:", error);
@@ -1753,61 +1766,35 @@ document.addEventListener('DOMContentLoaded', function() {
     async function startChat(targetId) {
         try {
             showLoading();
-            isGroupChat = targetId.startsWith('group_');
-
-            // Verify chat access
-            if (isGroupChat) {
-                const groupDoc = await db.collection('groups').doc(targetId).get();
-                if (!groupDoc.exists || !groupDoc.data().members.includes(currentUser.uid)) {
-                    hideLoading();
-                    return; // Silently fail and stay on current chat
-                }
-            } else {
-                // For 1:1 chats, verify targetId exists and isn't current user
-                if (targetId === currentUser.uid) {
-                    hideLoading();
-                    return;
-                }
-                const userDoc = await db.collection('users').doc(targetId).get();
-                if (!userDoc.exists) {
-                    hideLoading();
-                    return;
-                }
-            }
-
-            // Update URL without page reload
-            const url = new URL(window.location);
-            url.searchParams.set('chat', targetId);
-            window.history.pushState({}, '', url);
+            isGroupChat = targetId.startsWith('channel_');
 
             if (isGroupChat) {
-                const groupDoc = await db.collection('groups').doc(targetId).get();
-                if (!groupDoc.exists) {
+                const channelDoc = await db.collection('channels').doc(targetId.replace('channel_', '')).get();
+                if (!channelDoc.exists) {
                     hideLoading();
                     return;
                 }
 
-                const groupData = groupDoc.data();
-                currentChat = targetId; // Use group ID directly
+                const channelData = channelDoc.data();
+                currentChat = targetId;
                 loadMessages(currentChat);
                 updateMessageInputState(true);
 
-                // Update chat header for group
-                const chatHeader = document.querySelector('.chat-header .user-info');
-                if (chatHeader) {
-                    chatHeader.innerHTML = `
-                        <div class="avatar-container">
-                            <div class="group-avatar">${groupData.name[0].toUpperCase()}</div>
-                        </div>
-                        <div class="user-details">
-                            <span class="username">${groupData.name}</span>
-                            <span class="status">
-                                <i class="ri-group-line"></i>
-                                ${groupData.members.length} members
-                            </span>
-                        </div>
-                    `;
+                // Update channel info
+                const channelName = document.getElementById('currentChannelName');
+                const memberCount = document.getElementById('memberCount');
+                
+                if (channelName) {
+                    channelName.textContent = channelData.name;
                 }
+                
+                if (memberCount) {
+                    memberCount.innerHTML = `<i class="ri-group-line"></i> ${channelData.members.length} members`;
+                }
+
+                // Update channel header
+                document.querySelectorAll('.channel-item').forEach(el => el.classList.remove('active'));
+                document.querySelector(`.channel-item[data-channel-id="${targetId}"]`)?.classList.add('active');
             } else {
                 // Regular 1:1 chat logic
                 const otherUser = await db.collection('users').doc(targetId).get();
